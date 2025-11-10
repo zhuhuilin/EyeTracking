@@ -10,7 +10,7 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => AppState()),
-        Provider(create: (context) => CameraService()),
+        ChangeNotifierProvider(create: (context) => CameraService()),
       ],
       child: const EyeBallTrackingApp(),
     ),

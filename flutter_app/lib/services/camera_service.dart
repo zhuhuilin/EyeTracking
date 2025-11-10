@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart' as cam;
 import 'package:camera_macos/camera_macos.dart' as cam_macos;
 
 import '../models/app_state.dart';
 
-class CameraService {
+class CameraService extends ChangeNotifier {
   static const MethodChannel _channel = MethodChannel(
     'eyeball_tracking/camera',
   );
@@ -22,6 +22,7 @@ class CameraService {
   StreamSubscription<TrackingResult>? _trackingSubscription;
   List<cam.CameraDescription> _availableCameras = [];
   cam.CameraDescription? _selectedCamera;
+  Map<String, String> _cameraDeviceIds = {}; // Map camera name to device ID
 
   // Camera configuration
   static const cam.ResolutionPreset _resolution = cam.ResolutionPreset.medium;
@@ -34,6 +35,8 @@ class CameraService {
   Stream<TrackingResult> get trackingResults => _trackingController.stream;
   List<cam.CameraDescription> get availableCameras => _availableCameras;
   cam.CameraDescription? get selectedCamera => _selectedCamera;
+  String? get selectedCameraDeviceId =>
+      _selectedCamera != null ? _cameraDeviceIds[_selectedCamera!.name] : null;
 
   Future<List<cam.CameraDescription>> detectCameras() async {
     try {
@@ -75,13 +78,20 @@ class CameraService {
             print('Custom helper also failed: $helperError');
           }
         } else {
+          // Clear previous device ID mappings
+          _cameraDeviceIds.clear();
+
           for (var macCam in macCameras) {
             print('  Device: ${macCam.localizedName} (${macCam.deviceId})');
           }
 
           _availableCameras = macCameras.map((macCam) {
+            final cameraName = macCam.localizedName ?? macCam.deviceId;
+            // Store the mapping from camera name to device ID
+            _cameraDeviceIds[cameraName] = macCam.deviceId;
+
             return cam.CameraDescription(
-              name: macCam.localizedName ?? macCam.deviceId,
+              name: cameraName,
               lensDirection: cam.CameraLensDirection.external,
               sensorOrientation: 0,
             );
@@ -142,9 +152,17 @@ class CameraService {
   }
 
   Future<void> switchCamera(cam.CameraDescription camera) async {
-    if (!_isInitialized || _selectedCamera?.name == camera.name) return;
+    if (_selectedCamera?.name == camera.name) return;
 
     try {
+      _selectedCamera = camera;
+      notifyListeners();
+
+      if (!_isInitialized) {
+        print('Camera not initialized yet, just updating selection');
+        return;
+      }
+
       final wasTracking = _isTracking;
       if (_isTracking) {
         await stopTracking();
@@ -344,6 +362,7 @@ class CameraService {
   bool get isInitialized => _isInitialized;
   bool get isTracking => _isTracking;
 
+  @override
   Future<void> dispose() async {
     await stopTracking();
     await _trackingSubscription?.cancel();
@@ -351,6 +370,7 @@ class CameraService {
     await _trackingController.close();
     _isInitialized = false;
     _isTracking = false;
+    super.dispose();
   }
 }
 
@@ -415,5 +435,6 @@ class MockCameraService extends CameraService {
   Future<void> dispose() async {
     _isTracking = false;
     await _trackingController.close();
+    super.dispose();
   }
 }
