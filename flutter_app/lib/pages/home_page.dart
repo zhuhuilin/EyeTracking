@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/circle_test_widget.dart';
 import '../widgets/test_configuration_dialog.dart';
+import 'calibration_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -244,18 +245,83 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showSettings() {
-    // Show settings dialog
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Settings'),
-        content: const Text('Settings will be implemented here.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+      builder: (context) => Consumer<AppState>(
+        builder: (context, appState, child) => AlertDialog(
+          title: const Text('Settings'),
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Storage Settings',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  title: const Text('Use Cloud Storage'),
+                  subtitle: const Text('Store test data in the cloud'),
+                  value: appState.settings.useCloudStorage,
+                  onChanged: (value) {
+                    appState.updateSettings(
+                      appState.settings.copyWith(useCloudStorage: value),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Processing Settings',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  title: const Text('Enable Analytics'),
+                  subtitle: const Text('Send anonymous usage data'),
+                  value: appState.settings.enableAnalytics,
+                  onChanged: (value) {
+                    appState.updateSettings(
+                      appState.settings.copyWith(enableAnalytics: value),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                const Text('Processing Quality'),
+                Slider(
+                  value: appState.settings.processingQuality,
+                  min: 0.1,
+                  max: 1.0,
+                  divisions: 9,
+                  label:
+                      '${(appState.settings.processingQuality * 100).round()}%',
+                  onChanged: (value) {
+                    appState.updateSettings(
+                      appState.settings.copyWith(processingQuality: value),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'About',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'EyeBall Tracking v1.0.0\nReal-time eye tracking application',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -265,9 +331,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showCalibration() {
-    // Show calibration screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Calibration feature coming soon!')),
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const CalibrationPage()),
     );
   }
 

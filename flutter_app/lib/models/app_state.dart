@@ -19,7 +19,8 @@ class User {
     return User(
       id: json['id'],
       email: json['email'],
-      role: UserRole.values.firstWhere((e) => e.toString() == 'UserRole.${json['role']}'),
+      role: UserRole.values
+          .firstWhere((e) => e.toString() == 'UserRole.${json['role']}'),
       createdAt: DateTime.parse(json['createdAt']),
     );
   }
@@ -61,9 +62,50 @@ class TestConfiguration {
   factory TestConfiguration.fromJson(Map<String, dynamic> json) {
     return TestConfiguration(
       duration: Duration(milliseconds: json['duration']),
-      type: TestType.values.firstWhere((e) => e.toString() == 'TestType.${json['type']}'),
+      type: TestType.values
+          .firstWhere((e) => e.toString() == 'TestType.${json['type']}'),
       circleSize: json['circleSize'],
       movementSpeed: json['movementSpeed'],
+    );
+  }
+}
+
+class TrackingResult {
+  final double faceDistance;
+  final double gazeAngleX;
+  final double gazeAngleY;
+  final bool eyesFocused;
+  final bool headMoving;
+  final bool shouldersMoving;
+
+  TrackingResult({
+    required this.faceDistance,
+    required this.gazeAngleX,
+    required this.gazeAngleY,
+    required this.eyesFocused,
+    required this.headMoving,
+    required this.shouldersMoving,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'faceDistance': faceDistance,
+      'gazeAngleX': gazeAngleX,
+      'gazeAngleY': gazeAngleY,
+      'eyesFocused': eyesFocused,
+      'headMoving': headMoving,
+      'shouldersMoving': shouldersMoving,
+    };
+  }
+
+  factory TrackingResult.fromJson(Map<String, dynamic> json) {
+    return TrackingResult(
+      faceDistance: json['faceDistance'] ?? 0.0,
+      gazeAngleX: json['gazeAngleX'] ?? 0.0,
+      gazeAngleY: json['gazeAngleY'] ?? 0.0,
+      eyesFocused: json['eyesFocused'] ?? false,
+      headMoving: json['headMoving'] ?? false,
+      shouldersMoving: json['shouldersMoving'] ?? false,
     );
   }
 }
@@ -151,21 +193,26 @@ class TestSession {
 
     // Calculate accuracy based on gaze vs target position
     int correctGazes = dataPoints.where((point) {
-      final distance = _calculateDistance(point.gazeX, point.gazeY, point.targetX, point.targetY);
+      final distance = _calculateDistance(
+          point.gazeX, point.gazeY, point.targetX, point.targetY);
       return distance < 0.1; // Within 10% of screen considered correct
     }).length;
 
     final accuracy = correctGazes / dataPoints.length;
 
     // Calculate average reaction time (simplified)
-    final reactionTime = dataPoints.length > 1 
-        ? dataPoints.last.timestamp.difference(dataPoints.first.timestamp).inMilliseconds / dataPoints.length
+    final reactionTime = dataPoints.length > 1
+        ? dataPoints.last.timestamp
+                .difference(dataPoints.first.timestamp)
+                .inMilliseconds /
+            dataPoints.length
         : 0.0;
 
     // Movement analysis
     final movementAnalysis = {
       'headMovementCount': dataPoints.where((point) => point.headMoving).length,
-      'shoulderMovementCount': dataPoints.where((point) => point.shouldersMoving).length,
+      'shoulderMovementCount':
+          dataPoints.where((point) => point.shouldersMoving).length,
       'totalDataPoints': dataPoints.length,
     };
 
@@ -249,6 +296,18 @@ class AppSettings {
     this.enableAnalytics = true,
     this.processingQuality = 1.0,
   });
+
+  AppSettings copyWith({
+    bool? useCloudStorage,
+    bool? enableAnalytics,
+    double? processingQuality,
+  }) {
+    return AppSettings(
+      useCloudStorage: useCloudStorage ?? this.useCloudStorage,
+      enableAnalytics: enableAnalytics ?? this.enableAnalytics,
+      processingQuality: processingQuality ?? this.processingQuality,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {

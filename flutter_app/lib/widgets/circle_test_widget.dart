@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'dart:async';
+import 'package:provider/provider.dart';
+
+import '../models/app_state.dart';
+import '../services/camera_service.dart';
 
 class CircleTestWidget extends StatefulWidget {
   final VoidCallback onTestComplete;
@@ -13,7 +17,9 @@ class CircleTestWidget extends StatefulWidget {
 
 class _CircleTestWidgetState extends State<CircleTestWidget> {
   Offset _circlePosition = Offset.zero;
+  Offset _gazePosition = Offset.zero;
   Timer? _movementTimer;
+  StreamSubscription<TrackingResult>? _trackingSubscription;
   Random _random = Random();
   int _currentTestPhase = 0; // 0: random, 1: horizontal, 2: vertical
   int _correctGazes = 0;
@@ -24,6 +30,12 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
   @override
   void initState() {
     super.initState();
+    _random = Random();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeTest();
     });
@@ -32,6 +44,7 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
   @override
   void dispose() {
     _movementTimer?.cancel();
+    _trackingSubscription?.cancel();
     super.dispose();
   }
 
@@ -48,6 +61,16 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
       _correctGazes = 0;
       _totalGazes = 0;
     });
+
+    // Start listening to tracking results
+    final cameraService = Provider.of<CameraService>(context, listen: false);
+    _trackingSubscription = cameraService.trackingResults.listen((result) {
+      if (mounted && _testRunning) {
+        _updateGazePosition(result);
+        _checkGaze(_gazePosition);
+      }
+    });
+
     _startRandomMovement();
   }
 
@@ -156,6 +179,24 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
     widget.onTestComplete();
   }
 
+  void _updateGazePosition(TrackingResult result) {
+    if (!mounted) return;
+
+    final size = MediaQuery.of(context).size;
+
+    // Convert gaze angles to screen coordinates
+    // Gaze angles are normalized (-1 to 1), convert to screen coordinates
+    final screenX = size.width / 2 + (result.gazeAngleX * size.width / 4);
+    final screenY = size.height / 2 + (result.gazeAngleY * size.height / 4);
+
+    setState(() {
+      _gazePosition = Offset(
+        screenX.clamp(0.0, size.width),
+        screenY.clamp(0.0, size.height),
+      );
+    });
+  }
+
   double _calculateDistance(Offset p1, Offset p2) {
     return sqrt(pow(p1.dx - p2.dx, 2) + pow(p1.dy - p2.dy, 2));
   }
@@ -241,22 +282,25 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
             ),
           ),
 
-        // Simulated gaze point (for demo purposes)
+        // Real-time gaze point
         if (_testRunning)
           Positioned(
-            left: _circlePosition.dx + 100,
-            top: _circlePosition.dy + 100,
-            child: GestureDetector(
-              onPanUpdate: (details) {
-                _checkGaze(details.localPosition);
-              },
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.7),
-                  shape: BoxShape.circle,
-                ),
+            left: _gazePosition.dx - 10,
+            top: _gazePosition.dy - 10,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.8),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
             ),
           ),

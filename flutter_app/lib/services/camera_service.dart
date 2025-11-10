@@ -138,31 +138,39 @@ class CameraService {
   }
 
   Uint8List _yuv420ToRgb(CameraImage image) {
-    // Simplified YUV to RGB conversion
-    // Note: This is a placeholder - use proper conversion in production
+    // Proper YUV420 to RGB conversion
     final yPlane = image.planes[0];
     final uPlane = image.planes[1];
     final vPlane = image.planes[2];
 
+    final width = image.width;
+    final height = image.height;
+
     // Create RGB buffer (3 bytes per pixel)
-    final rgbData = Uint8List(image.width * image.height * 3);
+    final rgbData = Uint8List(width * height * 3);
 
-    // Simple conversion (this would be replaced with proper YUV to RGB algorithm)
-    for (int i = 0; i < yPlane.bytes.length; i++) {
-      final y = yPlane.bytes[i] & 0xFF;
-      // Use average UV for simplicity
-      final u = uPlane.bytes[i ~/ 4] & 0xFF;
-      final v = vPlane.bytes[i ~/ 4] & 0xFF;
+    // YUV420 to RGB conversion formulas
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final pixelIndex = y * width + x;
+        final uvIndex = (y ~/ 2) * (width ~/ 2) + (x ~/ 2);
 
-      // Convert YUV to RGB (simplified)
-      final r = y.clamp(0, 255);
-      final g = y.clamp(0, 255);
-      final b = y.clamp(0, 255);
+        final Y = yPlane.bytes[pixelIndex] & 0xFF;
+        final U = uPlane.bytes[uvIndex] & 0xFF;
+        final V = vPlane.bytes[uvIndex] & 0xFF;
 
-      final pixelIndex = i * 3;
-      rgbData[pixelIndex] = r;
-      rgbData[pixelIndex + 1] = g;
-      rgbData[pixelIndex + 2] = b;
+        // Convert YUV to RGB using standard formulas
+        final r = (Y + 1.402 * (V - 128)).round().clamp(0, 255);
+        final g = (Y - 0.344136 * (U - 128) - 0.714136 * (V - 128))
+            .round()
+            .clamp(0, 255);
+        final b = (Y + 1.772 * (U - 128)).round().clamp(0, 255);
+
+        final rgbIndex = pixelIndex * 3;
+        rgbData[rgbIndex] = r;
+        rgbData[rgbIndex + 1] = g;
+        rgbData[rgbIndex + 2] = b;
+      }
     }
 
     return rgbData;

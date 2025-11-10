@@ -138,59 +138,154 @@ std::vector<cv::Point2f> TrackingEngine::detectEyes(const cv::Mat& face_roi) {
 }
 
 cv::Point2f TrackingEngine::estimateGaze(const std::vector<cv::Point2f>& eye_points) {
-    // Simple gaze estimation based on relative eye positions
-    // In production, this would use more sophisticated methods
-    if (eye_points.size() < 2) {
+    // Improved gaze estimation using pupil center and eye corners
+    if (eye_points.size() < 4) { // Need at least left and right eye points
         return cv::Point2f(0, 0);
     }
-    
-    // Calculate center between eyes
-    cv::Point2f center(0, 0);
-    for (const auto& point : eye_points) {
-        center += point;
+
+    // Assume eye_points are ordered as: [left_eye_center, right_eye_center, left_eye_corner1, left_eye_corner2, right_eye_corner1, right_eye_corner2]
+    cv::Point2f left_eye_center = eye_points[0];
+    cv::Point2f right_eye_center = eye_points[1];
+
+    // Calculate horizontal gaze based on eye center positions
+    float eye_distance = cv::norm(left_eye_center - right_eye_center);
+    float gaze_x = (left_eye_center.x - right_eye_center.x) / eye_distance;
+
+    // Calculate vertical gaze based on eye aspect ratio (if eye corners are available)
+    float gaze_y = 0.0f;
+    if (eye_points.size() >= 6) {
+        // Calculate eye aspect ratios
+        float left_eye_width = cv::norm(eye_points[2] - eye_points[3]);
+        float left_eye_height = cv::norm(cv::Point2f(eye_points[2].x, eye_points[3].y) - cv::Point2f(eye_points[3].x, eye_points[2].y));
+        float right_eye_width = cv::norm(eye_points[4] - eye_points[5]);
+        float right_eye_height = cv::norm(cv::Point2f(eye_points[4].x, eye_points[5].y) - cv::Point2f(eye_points[5].x, eye_points[4].y));
+
+        float left_aspect = left_eye_height / left_eye_width;
+        float right_aspect = right_eye_height / right_eye_width;
+        float avg_aspect = (left_aspect + right_aspect) / 2.0f;
+
+        // Higher aspect ratio indicates more open eyes (looking up), lower indicates closed/squinting (looking down)
+        gaze_y = (avg_aspect - 0.3f) / 0.2f; // Normalize around typical aspect ratio
+        gaze_y = std::max(-1.0f, std::min(1.0f, gaze_y));
     }
-    center.x /= eye_points.size();
-    center.y /= eye_points.size();
-    
-    // Simple gaze direction (placeholder)
-    // This would be replaced with proper gaze estimation algorithms
-    cv::Point2f gaze(0.0f, 0.0f);
-    
-    return gaze;
+
+    return cv::Point2f(gaze_x, gaze_y);
 }
 
 std::vector<cv::Point2f> TrackingEngine::detectFaceLandmarks(const cv::Mat& frame, const cv::Rect& face_roi) {
     std::vector<cv::Point2f> landmarks;
-    
-    // Placeholder for face landmark detection
-    // In production, this would use Dlib, MediaPipe, or OpenCV's face module
-    
-    // Simple landmarks based on face rectangle
-    landmarks.push_back(cv::Point2f(face_roi.x, face_roi.y)); // Top-left
-    landmarks.push_back(cv::Point2f(face_roi.x + face_roi.width, face_roi.y)); // Top-right
-    landmarks.push_back(cv::Point2f(face_roi.x + face_roi.width/2, face_roi.y + face_roi.height/2)); // Center
-    landmarks.push_back(cv::Point2f(face_roi.x, face_roi.y + face_roi.height)); // Bottom-left
-    landmarks.push_back(cv::Point2f(face_roi.x + face_roi.width, face_roi.y + face_roi.height)); // Bottom-right
-    
+
+    // Enhanced face landmark detection using facial feature analysis
+    // This provides more accurate landmarks for head pose estimation
+
+    // Extract face region
+    cv::Mat face_region = frame(face_roi);
+
+    // Detect eyes more precisely for landmark estimation
+    cv::CascadeClassifier eye_cascade;
+    std::vector<cv::Rect> eyes;
+
+    if (eye_cascade.load("/usr/share/opencv4/haarcascades/haarcascade_eye.xml")) {
+        eye_cascade.detectMultiScale(face_region, eyes, 1.1, 2, 0, cv::Size(20, 20));
+    }
+
+    // Basic facial landmarks based on detected features
+    float face_x = face_roi.x;
+    float face_y = face_roi.y;
+    float face_w = face_roi.width;
+    float face_h = face_roi.height;
+
+    // Corner points
+    landmarks.push_back(cv::Point2f(face_x, face_y)); // Top-left
+    landmarks.push_back(cv::Point2f(face_x + face_w, face_y)); // Top-right
+    landmarks.push_back(cv::Point2f(face_x, face_y + face_h)); // Bottom-left
+    landmarks.push_back(cv::Point2f(face_x + face_w, face_y + face_h)); // Bottom-right
+
+    // Eye positions (if detected)
+    if (eyes.size() >= 2) {
+        // Sort eyes by x position (left to right)
+        std::sort(eyes.begin(), eyes.end(), [](const cv::Rect& a, const cv::Rect& b) {
+            return a.x < b.x;
+        });
+
+        cv::Point2f left_eye_center(face_x + eyes[0].x + eyes[0].width/2.0f, face_y + eyes[0].y + eyes[0].height/2.0f);
+        cv::Point2f right_eye_center(face_x + eyes[1].x + eyes[1].width/2.0f, face_y + eyes[1].y + eyes[1].height/2.0f);
+
+        landmarks.push_back(left_eye_center);
+        landmarks.push_back(right_eye_center);
+
+        // Eye corners (estimated)
+        landmarks.push_back(cv::Point2f(left_eye_center.x - eyes[0].width/3.0f, left_eye_center.y)); // Left eye left corner
+        landmarks.push_back(cv::Point2f(left_eye_center.x + eyes[0].width/3.0f, left_eye_center.y)); // Left eye right corner
+        landmarks.push_back(cv::Point2f(right_eye_center.x - eyes[1].width/3.0f, right_eye_center.y)); // Right eye left corner
+        landmarks.push_back(cv::Point2f(right_eye_center.x + eyes[1].width/3.0f, right_eye_center.y)); // Right eye right corner
+    } else {
+        // Fallback eye positions based on face proportions
+        float eye_y = face_y + face_h * 0.3f;
+        float eye_spacing = face_w * 0.25f;
+        landmarks.push_back(cv::Point2f(face_x + face_w/2.0f - eye_spacing, eye_y)); // Left eye
+        landmarks.push_back(cv::Point2f(face_x + face_w/2.0f + eye_spacing, eye_y)); // Right eye
+    }
+
+    // Nose tip (estimated)
+    landmarks.push_back(cv::Point2f(face_x + face_w/2.0f, face_y + face_h * 0.5f));
+
+    // Mouth corners (estimated)
+    float mouth_y = face_y + face_h * 0.75f;
+    float mouth_width = face_w * 0.4f;
+    landmarks.push_back(cv::Point2f(face_x + face_w/2.0f - mouth_width/2.0f, mouth_y)); // Left mouth corner
+    landmarks.push_back(cv::Point2f(face_x + face_w/2.0f + mouth_width/2.0f, mouth_y)); // Right mouth corner
+
     return landmarks;
 }
 
 cv::Vec3f TrackingEngine::estimateHeadPose(const std::vector<cv::Point2f>& face_points) {
-    // Simple head pose estimation (placeholder)
-    // In production, this would use solvePnP with a 3D face model
-    
+    // Improved head pose estimation using facial landmarks
+    // This uses geometric analysis of facial features for pose estimation
+
     cv::Vec3f pose(0, 0, 0); // pitch, yaw, roll
-    
-    if (face_points.size() >= 5) {
-        // Calculate simple pose based on face landmark symmetry
-        float left_right_diff = std::abs(face_points[0].x - face_points[1].x);
-        float top_bottom_diff = std::abs(face_points[0].y - face_points[3].y);
-        
-        // Simplified pose estimation
-        pose[1] = (face_points[0].x - face_points[1].x) / 100.0f; // Yaw
-        pose[0] = (face_points[0].y - face_points[3].y) / 100.0f; // Pitch
+
+    if (face_points.size() < 10) {
+        return pose; // Need sufficient landmarks
     }
-    
+
+    // Extract key facial points
+    // Assuming landmarks are ordered as: corners, eyes, eye_corners, nose, mouth_corners
+    cv::Point2f left_eye = face_points[4];   // Left eye center
+    cv::Point2f right_eye = face_points[5];  // Right eye center
+    cv::Point2f nose = face_points[10];      // Nose tip
+    cv::Point2f left_mouth = face_points[11]; // Left mouth corner
+    cv::Point2f right_mouth = face_points[12]; // Right mouth corner
+
+    // Calculate eye line vector
+    cv::Point2f eye_center = (left_eye + right_eye) * 0.5f;
+    cv::Point2f eye_vector = right_eye - left_eye;
+    float eye_distance = cv::norm(eye_vector);
+
+    // Normalize eye vector
+    if (eye_distance > 0) {
+        eye_vector /= eye_distance;
+    }
+
+    // Calculate yaw (horizontal rotation) based on eye line tilt
+    pose[1] = -eye_vector.y; // Negative because positive yaw is clockwise
+
+    // Calculate pitch (vertical rotation) based on nose position relative to eyes
+    float nose_to_eye_distance = nose.y - eye_center.y;
+    float expected_nose_distance = eye_distance * 0.8f; // Expected distance based on face proportions
+    pose[0] = (nose_to_eye_distance - expected_nose_distance) / expected_nose_distance;
+
+    // Calculate roll (rotation around forward axis) based on mouth symmetry
+    float mouth_center_x = (left_mouth.x + right_mouth.x) * 0.5f;
+    float face_center_x = (face_points[0].x + face_points[1].x) * 0.5f; // Face center from corners
+    float mouth_offset = mouth_center_x - face_center_x;
+    pose[2] = mouth_offset / eye_distance; // Normalize by eye distance
+
+    // Clamp values to reasonable ranges
+    pose[0] = std::max(-1.0f, std::min(1.0f, pose[0])); // Pitch: -1 to 1
+    pose[1] = std::max(-1.0f, std::min(1.0f, pose[1])); // Yaw: -1 to 1
+    pose[2] = std::max(-0.5f, std::min(0.5f, pose[2])); // Roll: -0.5 to 0.5 (less range)
+
     return pose;
 }
 
@@ -209,17 +304,69 @@ bool TrackingEngine::detectHeadMovement(const cv::Vec3f& current_pose, const cv:
 
 std::vector<cv::Point2f> TrackingEngine::detectShoulders(const cv::Mat& frame) {
     std::vector<cv::Point2f> shoulder_points;
-    
-    // Placeholder for shoulder detection
-    // In production, this would use pose estimation models like MediaPipe Pose
-    
-    // Simple shoulder points based on frame dimensions
+
+    // Enhanced shoulder detection using edge detection and contour analysis
+    // This provides a basic approximation of shoulder positions
+
     int frame_height = frame.rows;
     int frame_width = frame.cols;
-    
-    shoulder_points.push_back(cv::Point2f(frame_width * 0.25f, frame_height * 0.8f)); // Left shoulder
-    shoulder_points.push_back(cv::Point2f(frame_width * 0.75f, frame_height * 0.8f)); // Right shoulder
-    
+
+    // Focus on lower portion of frame where shoulders are likely to be
+    cv::Rect roi(0, frame_height * 0.6f, frame_width, frame_height * 0.4f);
+    cv::Mat shoulder_region = frame(roi);
+
+    // Apply Gaussian blur to reduce noise
+    cv::Mat blurred;
+    cv::GaussianBlur(shoulder_region, blurred, cv::Size(5, 5), 0);
+
+    // Edge detection using Canny
+    cv::Mat edges;
+    cv::Canny(blurred, edges, 50, 150);
+
+    // Find contours in the edge image
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(edges, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    // Filter contours that could be shoulders (based on size and position)
+    std::vector<cv::Rect> shoulder_candidates;
+    for (const auto& contour : contours) {
+        cv::Rect bounding_rect = cv::boundingRect(contour);
+        double area = cv::contourArea(contour);
+
+        // Filter based on reasonable shoulder size and aspect ratio
+        if (area > 500 && area < 10000) { // Size constraints
+            double aspect_ratio = static_cast<double>(bounding_rect.width) / bounding_rect.height;
+            if (aspect_ratio > 0.5 && aspect_ratio < 3.0) { // Aspect ratio constraints
+                shoulder_candidates.push_back(bounding_rect);
+            }
+        }
+    }
+
+    // Sort candidates by x position (left to right)
+    std::sort(shoulder_candidates.begin(), shoulder_candidates.end(),
+              [](const cv::Rect& a, const cv::Rect& b) { return a.x < b.x; });
+
+    // Select the two most likely shoulder candidates
+    if (shoulder_candidates.size() >= 2) {
+        // Take the leftmost and rightmost candidates as shoulders
+        cv::Rect left_shoulder = shoulder_candidates.front();
+        cv::Rect right_shoulder = shoulder_candidates.back();
+
+        // Convert to absolute coordinates
+        shoulder_points.push_back(cv::Point2f(
+            left_shoulder.x + left_shoulder.width/2.0f,
+            roi.y + left_shoulder.y + left_shoulder.height/2.0f
+        ));
+        shoulder_points.push_back(cv::Point2f(
+            right_shoulder.x + right_shoulder.width/2.0f,
+            roi.y + right_shoulder.y + right_shoulder.height/2.0f
+        ));
+    } else {
+        // Fallback to default positions if shoulder detection fails
+        shoulder_points.push_back(cv::Point2f(frame_width * 0.25f, frame_height * 0.8f));
+        shoulder_points.push_back(cv::Point2f(frame_width * 0.75f, frame_height * 0.8f));
+    }
+
     return shoulder_points;
 }
 
