@@ -1,0 +1,95 @@
+# Flutter
+.flutter/
+flutter_export_environment.sh
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_app/.dart_tool/
+flutter_app/.packages
+flutter_app/.pub-cache/
+flutter_app/build/
+flutter_app/ios/.symlinks/
+flutter_app/ios/Flutter/Flutter.framework/
+flutter_app/ios/Flutter/Flutter.podspec
+flutter_app/ios/Runner/GeneratedPluginRegistrant.*
+
+# Android
+flutter_app/android/.gradle
+flutter_app/android/app/build/
+flutter_app/android/gradle/wrapper/gradle-wrapper.jar
+flutter_app/android/local.properties
+flutter_app/android/**/GeneratedPluginRegistrant.java
+
+# iOS
+flutter_app/ios/.generated/
+flutter_app/ios/Flutter/App.framework/
+flutter_app/ios/Flutter/Flutter.framework/
+flutter_app/ios/Flutter/Flutter.podspec
+flutter_app/ios/Pods/
+flutter_app/ios/Runner/GeneratedPluginRegistrant.h
+flutter_app/ios/Runner/GeneratedPluginRegistrant.m
+
+# macOS
+flutter_app/macos/Flutter/Flutter.framework/
+flutter_app/macos/Flutter/GeneratedPluginRegistrant.swift
+flutter_app/macos/Pods/
+flutter_app/macos/Runner/GeneratedPluginRegistrant.swift
+
+# Windows
+flutter_app/windows/flutter/
+flutter_app/windows/runner/flutter_window.cpp
+flutter_app/windows/runner/flutter_window.h
+flutter_app/windows/runner/utils.cpp
+flutter_app/windows/runner/utils.h
+flutter_app/windows/runner/win32_window.cpp
+flutter_app/windows/runner/win32_window.h
+
+# Linux
+flutter_app/linux/flutter/
+flutter_app/linux/runner/flutter_window.cpp
+flutter_app/linux/runner/flutter_window.h
+
+# C++ Core
+core/build/
+core/install/
+*.o
+*.dylib
+*.so
+*.dll
+*.a
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Documentation
+docs/_build/
