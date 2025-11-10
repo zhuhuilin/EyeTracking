@@ -45,11 +45,17 @@ class _CalibrationPageState extends State<CalibrationPage> {
       return;
     }
 
+    setState(() {
+      // Update the UI to show the current point
+    });
+
     // Show current calibration point for 3 seconds
     _pointTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         _recordCalibrationPoint();
-        _currentPoint++;
+        setState(() {
+          _currentPoint++;
+        });
         _showNextPoint();
       }
     });

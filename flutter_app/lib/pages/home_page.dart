@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../widgets/circle_test_widget.dart';
 import '../widgets/test_configuration_dialog.dart';
+import '../widgets/camera_selection_dialog.dart';
 import 'calibration_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -22,6 +23,10 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.camera_alt),
+            onPressed: _showCameraSelection,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: _showSettings,
@@ -333,6 +338,13 @@ class _HomePageState extends State<HomePage> {
   void _showCalibration() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => const CalibrationPage()),
+    );
+  }
+
+  void _showCameraSelection() {
+    showDialog(
+      context: context,
+      builder: (context) => const CameraSelectionDialog(),
     );
   }
 

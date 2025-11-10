@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
-import 'package:camera/camera.dart';
+import 'package:camera/camera.dart' as cam;
+import 'package:camera_macos/camera_macos.dart' as cam_macos;
 
 import '../models/app_state.dart';
 
@@ -13,13 +16,15 @@ class CameraService {
     'eyeball_tracking/tracking',
   );
 
-  CameraController? _cameraController;
+  cam.CameraController? _cameraController;
   bool _isInitialized = false;
   bool _isTracking = false;
   StreamSubscription<TrackingResult>? _trackingSubscription;
+  List<cam.CameraDescription> _availableCameras = [];
+  cam.CameraDescription? _selectedCamera;
 
   // Camera configuration
-  static const ResolutionPreset _resolution = ResolutionPreset.medium;
+  static const cam.ResolutionPreset _resolution = cam.ResolutionPreset.medium;
   static const int _frameRate = 30;
 
   // Tracking results stream
@@ -27,22 +32,99 @@ class CameraService {
       StreamController<TrackingResult>.broadcast();
 
   Stream<TrackingResult> get trackingResults => _trackingController.stream;
+  List<cam.CameraDescription> get availableCameras => _availableCameras;
+  cam.CameraDescription? get selectedCamera => _selectedCamera;
 
-  Future<void> initialize() async {
+  Future<List<cam.CameraDescription>> detectCameras() async {
     try {
-      // Get available cameras
-      final cameras = await availableCameras();
+      // Use camera_macos on macOS, regular camera plugin on other platforms
+      if (!kIsWeb && Platform.isMacOS) {
+        print('Using camera_macos to detect cameras...');
+        final macCameras = await cam_macos.CameraMacOS.instance.listDevices(
+          deviceType: cam_macos.CameraMacOSDeviceType.video,
+        );
+        print('camera_macos returned ${macCameras.length} devices');
 
-      // Use the front camera for eye tracking
-      final frontCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
+        // If camera_macos returns 0 devices, try our custom helper
+        if (macCameras.isEmpty) {
+          print('camera_macos returned 0 devices, trying custom camera helper...');
+          try {
+            const MethodChannel helperChannel = MethodChannel('eyeball_tracking/camera_helper');
+            final result = await helperChannel.invokeMethod('listCameras');
 
-      _cameraController = CameraController(
-        frontCamera,
+            if (result is Map && result['devices'] is List) {
+              final devices = result['devices'] as List;
+              print('Custom helper found ${devices.length} devices');
+
+              _availableCameras = devices.map((device) {
+                final deviceMap = device as Map;
+                return cam.CameraDescription(
+                  name: deviceMap['localizedName'] as String? ?? 'Unknown Camera',
+                  lensDirection: cam.CameraLensDirection.external,
+                  sensorOrientation: 0,
+                );
+              }).toList();
+
+              print('Successfully detected ${_availableCameras.length} cameras via custom helper');
+              for (var camera in _availableCameras) {
+                print(' - ${camera.name}');
+              }
+              return _availableCameras;
+            }
+          } catch (helperError) {
+            print('Custom helper also failed: $helperError');
+          }
+        } else {
+          for (var macCam in macCameras) {
+            print('  Device: ${macCam.localizedName} (${macCam.deviceId})');
+          }
+
+          _availableCameras = macCameras.map((macCam) {
+            return cam.CameraDescription(
+              name: macCam.localizedName ?? macCam.deviceId,
+              lensDirection: cam.CameraLensDirection.external,
+              sensorOrientation: 0,
+            );
+          }).toList();
+        }
+      } else {
+        _availableCameras = await cam.availableCameras();
+      }
+
+      print('Detected ${_availableCameras.length} cameras:');
+      for (var camera in _availableCameras) {
+        print(' - ${camera.name} (${camera.lensDirection})');
+      }
+      return _availableCameras;
+    } catch (e, stackTrace) {
+      print('Failed to detect cameras: $e');
+      print('Stack trace: $stackTrace');
+      return [];
+    }
+  }
+
+  Future<void> initialize({cam.CameraDescription? camera}) async {
+    try {
+      // If no cameras detected yet, detect them first
+      if (_availableCameras.isEmpty) {
+        await detectCameras();
+      }
+
+      // Use provided camera or default to front camera
+      _selectedCamera = camera ??
+          _availableCameras.firstWhere(
+            (camera) => camera.lensDirection == cam.CameraLensDirection.front,
+            orElse: () => _availableCameras.first,
+          );
+
+      if (_cameraController != null) {
+        await _cameraController!.dispose();
+      }
+
+      _cameraController = cam.CameraController(
+        _selectedCamera!,
         _resolution,
-        imageFormatGroup: ImageFormatGroup.yuv420,
+        imageFormatGroup: cam.ImageFormatGroup.yuv420,
         enableAudio: false,
       );
 
@@ -52,9 +134,31 @@ class CameraService {
       // Initialize native tracking engine
       await _channel.invokeMethod('initializeTrackingEngine');
 
-      print('Camera service initialized successfully');
+      print('Camera service initialized with: ${_selectedCamera!.name}');
     } catch (e) {
       print('Failed to initialize camera service: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> switchCamera(cam.CameraDescription camera) async {
+    if (!_isInitialized || _selectedCamera?.name == camera.name) return;
+
+    try {
+      final wasTracking = _isTracking;
+      if (_isTracking) {
+        await stopTracking();
+      }
+
+      await initialize(camera: camera);
+
+      if (wasTracking) {
+        await startTracking();
+      }
+
+      print('Switched to camera: ${camera.name}');
+    } catch (e) {
+      print('Failed to switch camera: $e');
       rethrow;
     }
   }
@@ -105,7 +209,7 @@ class CameraService {
     }
   }
 
-  void _processCameraImage(CameraImage image) {
+  void _processCameraImage(cam.CameraImage image) {
     if (!_isTracking) return;
 
     try {
@@ -124,12 +228,12 @@ class CameraService {
     }
   }
 
-  Uint8List _convertImageToNativeFormat(CameraImage image) {
+  Uint8List _convertImageToNativeFormat(cam.CameraImage image) {
     // Convert YUV420 to RGB for processing
     // This is a simplified conversion - in production, use proper YUV to RGB conversion
-    if (image.format.group == ImageFormatGroup.yuv420) {
+    if (image.format.group == cam.ImageFormatGroup.yuv420) {
       return _yuv420ToRgb(image);
-    } else if (image.format.group == ImageFormatGroup.bgra8888) {
+    } else if (image.format.group == cam.ImageFormatGroup.bgra8888) {
       return image.planes[0].bytes;
     } else {
       // Fallback: use first plane
@@ -137,7 +241,7 @@ class CameraService {
     }
   }
 
-  Uint8List _yuv420ToRgb(CameraImage image) {
+  Uint8List _yuv420ToRgb(cam.CameraImage image) {
     // Proper YUV420 to RGB conversion
     final yPlane = image.planes[0];
     final uPlane = image.planes[1];
@@ -176,15 +280,15 @@ class CameraService {
     return rgbData;
   }
 
-  String _getImageFormat(ImageFormat format) {
+  String _getImageFormat(cam.ImageFormat format) {
     switch (format.group) {
-      case ImageFormatGroup.yuv420:
+      case cam.ImageFormatGroup.yuv420:
         return 'yuv420';
-      case ImageFormatGroup.bgra8888:
+      case cam.ImageFormatGroup.bgra8888:
         return 'bgra8888';
-      case ImageFormatGroup.jpeg:
+      case cam.ImageFormatGroup.jpeg:
         return 'jpeg';
-      case ImageFormatGroup.nv21:
+      case cam.ImageFormatGroup.nv21:
         return 'nv21';
       default:
         return 'unknown';
@@ -236,7 +340,7 @@ class CameraService {
     await _channel.invokeMethod('finishCalibration');
   }
 
-  CameraController? get cameraController => _cameraController;
+  cam.CameraController? get cameraController => _cameraController;
   bool get isInitialized => _isInitialized;
   bool get isTracking => _isTracking;
 
@@ -265,7 +369,7 @@ abstract class NativeCameraInterface {
 // Mock implementation for development
 class MockCameraService extends CameraService {
   @override
-  Future<void> initialize() async {
+  Future<void> initialize({cam.CameraDescription? camera}) async {
     // Simulate camera initialization
     await Future.delayed(const Duration(seconds: 1));
     _isInitialized = true;

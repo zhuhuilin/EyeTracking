@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access for eye tracking and gaze detection</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app may need microphone access for video recording</string>
 </dict>
 </plist>
