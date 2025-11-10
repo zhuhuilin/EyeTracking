@@ -5,6 +5,7 @@ import '../models/app_state.dart';
 import '../widgets/circle_test_widget.dart';
 import '../widgets/test_configuration_dialog.dart';
 import '../widgets/camera_selection_dialog.dart';
+import '../widgets/camera_preview_widget.dart';
 import 'calibration_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -36,12 +37,14 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Consumer<AppState>(
         builder: (context, appState, child) {
-          return Padding(
+          return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildWelcomeSection(appState),
+                const SizedBox(height: 24),
+                const CameraPreviewWidget(),
                 const SizedBox(height: 24),
                 _buildTestControls(appState),
                 const SizedBox(height: 24),
@@ -139,59 +142,59 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildTrackingSection(AppState appState) {
-    return Expanded(
-      child: Column(
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Test in Progress',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleMedium?.copyWith(color: Colors.green),
+    return Column(
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Test in Progress',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: Colors.green),
+                ),
+                ElevatedButton(
+                  onPressed: _stopTest,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
                   ),
-                  ElevatedButton(
-                    onPressed: _stopTest,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Stop Test'),
-                  ),
-                ],
-              ),
+                  child: const Text('Stop Test'),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          Expanded(child: CircleTestWidget(onTestComplete: _onTestComplete)),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 400,
+          child: CircleTestWidget(onTestComplete: _onTestComplete),
+        ),
+      ],
     );
   }
 
   Widget _buildHistorySection() {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Recent Tests', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView(
-              children: [
-                _buildTestResultItem('Test 1', '85% accuracy', '2 minutes ago'),
-                _buildTestResultItem('Test 2', '72% accuracy', '1 hour ago'),
-                _buildTestResultItem('Test 3', '91% accuracy', 'Yesterday'),
-                _buildTestResultItem('Test 4', '68% accuracy', '2 days ago'),
-              ],
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Recent Tests', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 400,
+          child: ListView(
+            children: [
+              _buildTestResultItem('Test 1', '85% accuracy', '2 minutes ago'),
+              _buildTestResultItem('Test 2', '72% accuracy', '1 hour ago'),
+              _buildTestResultItem('Test 3', '91% accuracy', 'Yesterday'),
+              _buildTestResultItem('Test 4', '68% accuracy', '2 days ago'),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
