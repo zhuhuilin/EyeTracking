@@ -103,7 +103,7 @@ class _CameraSelectionDialogState extends State<CameraSelectionDialog> {
               ),
             )
           : _cameras.isEmpty
-              ? Column(
+              ? const Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.camera_alt, size: 48, color: Colors.grey),

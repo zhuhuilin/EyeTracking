@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 
-import '../models/app_state.dart';
 import '../services/camera_service.dart';
 
 class CalibrationPage extends StatefulWidget {
@@ -13,16 +13,30 @@ class CalibrationPage extends StatefulWidget {
 }
 
 class _CalibrationPageState extends State<CalibrationPage> {
+  static const MethodChannel _channel =
+      MethodChannel('eyeball_tracking/camera');
   int _currentPoint = 0;
   bool _calibrating = false;
   Timer? _pointTimer;
-  final List<Offset> _calibrationPoints = [
-    const Offset(0.1, 0.1), // Top-left
-    const Offset(0.9, 0.1), // Top-right
-    const Offset(0.5, 0.5), // Center
-    const Offset(0.1, 0.9), // Bottom-left
-    const Offset(0.9, 0.9), // Bottom-right
-  ];
+  // Circle radius in pixels (25px for 50px diameter circle)
+  static const double _circleRadius = 25.0;
+
+  // Get calibration points that ensure circles are fully visible
+  List<Offset> _getCalibrationPoints(Size screenSize) {
+    return [
+      // Top-left: position center so circle is fully visible
+      Offset(_circleRadius, _circleRadius),
+      // Top-right: position center so circle is fully visible
+      Offset(screenSize.width - _circleRadius, _circleRadius),
+      // Center
+      Offset(screenSize.width / 2, screenSize.height / 2),
+      // Bottom-left: position center so circle is fully visible
+      Offset(_circleRadius, screenSize.height - _circleRadius),
+      // Bottom-right: position center so circle is fully visible
+      Offset(
+          screenSize.width - _circleRadius, screenSize.height - _circleRadius),
+    ];
+  }
 
   @override
   void dispose() {
@@ -30,17 +44,39 @@ class _CalibrationPageState extends State<CalibrationPage> {
     super.dispose();
   }
 
-  void _startCalibration() {
-    setState(() {
-      _calibrating = true;
-      _currentPoint = 0;
-    });
+  void _startCalibration() async {
+    try {
+      print('Attempting to save window state...');
+      // Save current window state
+      await _channel.invokeMethod('saveWindowState');
+      print('Window state saved successfully');
 
-    _showNextPoint();
+      print('Attempting to enter fullscreen...');
+      // Enter fullscreen mode
+      await _channel.invokeMethod('enterFullscreen');
+      print('Entered fullscreen successfully');
+
+      setState(() {
+        _calibrating = true;
+        _currentPoint = 0;
+      });
+
+      _showNextPoint();
+    } catch (e, stackTrace) {
+      print('Calibration error: $e');
+      print('Stack trace: $stackTrace');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to enter fullscreen: $e')),
+      );
+    }
   }
 
   void _showNextPoint() {
-    if (_currentPoint >= _calibrationPoints.length) {
+    final window = WidgetsBinding.instance.window;
+    final screenSize = window.physicalSize / window.devicePixelRatio;
+    final calibrationPoints = _getCalibrationPoints(screenSize);
+
+    if (_currentPoint >= calibrationPoints.length) {
       _finishCalibration();
       return;
     }
@@ -63,12 +99,16 @@ class _CalibrationPageState extends State<CalibrationPage> {
 
   void _recordCalibrationPoint() async {
     final cameraService = Provider.of<CameraService>(context, listen: false);
-    final point = _calibrationPoints[_currentPoint];
 
-    // Convert normalized coordinates to actual screen coordinates
-    final size = MediaQuery.of(context).size;
-    final screenX = point.dx * size.width;
-    final screenY = point.dy * size.height;
+    // Get screen size and calibration points
+    final window = WidgetsBinding.instance.window;
+    final screenSize = window.physicalSize / window.devicePixelRatio;
+    final calibrationPoints = _getCalibrationPoints(screenSize);
+    final point = calibrationPoints[_currentPoint];
+
+    // Use absolute screen coordinates (no conversion needed since points are already in pixels)
+    final screenX = point.dx;
+    final screenY = point.dy;
 
     try {
       await cameraService.addCalibrationPoint(screenX, screenY);
@@ -84,6 +124,10 @@ class _CalibrationPageState extends State<CalibrationPage> {
 
     try {
       await cameraService.finishCalibration();
+
+      // Restore window state
+      await _channel.invokeMethod('restoreWindowState');
+
       setState(() {
         _calibrating = false;
       });
@@ -102,6 +146,13 @@ class _CalibrationPageState extends State<CalibrationPage> {
         }
       });
     } catch (e) {
+      // Restore window state even on error
+      try {
+        await _channel.invokeMethod('restoreWindowState');
+      } catch (restoreError) {
+        // Ignore restore errors
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Calibration failed: $e')),
       );
@@ -111,8 +162,16 @@ class _CalibrationPageState extends State<CalibrationPage> {
     }
   }
 
-  void _cancelCalibration() {
+  void _cancelCalibration() async {
     _pointTimer?.cancel();
+
+    // Restore window state
+    try {
+      await _channel.invokeMethod('restoreWindowState');
+    } catch (e) {
+      // Ignore restore errors during cancel
+    }
+
     setState(() {
       _calibrating = false;
       _currentPoint = 0;
@@ -122,23 +181,18 @@ class _CalibrationPageState extends State<CalibrationPage> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final window = WidgetsBinding.instance.window;
+    final screenSize = window.physicalSize / window.devicePixelRatio;
+    final calibrationPoints = _getCalibrationPoints(screenSize);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Eye Tracking Calibration'),
-        backgroundColor: Colors.blue[700],
-        foregroundColor: Colors.white,
-        actions: [
-          if (_calibrating)
-            TextButton(
-              onPressed: _cancelCalibration,
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Colors.white),
-              ),
+      appBar: _calibrating
+          ? null
+          : AppBar(
+              title: const Text('Eye Tracking Calibration'),
+              backgroundColor: Colors.blue[700],
+              foregroundColor: Colors.white,
             ),
-        ],
-      ),
       body: Container(
         color: Colors.grey[900],
         child: Stack(
@@ -150,10 +204,10 @@ class _CalibrationPageState extends State<CalibrationPage> {
             ),
 
             // Calibration point
-            if (_calibrating && _currentPoint < _calibrationPoints.length)
+            if (_calibrating && _currentPoint < calibrationPoints.length)
               Positioned(
-                left: _calibrationPoints[_currentPoint].dx * size.width - 25,
-                top: _calibrationPoints[_currentPoint].dy * size.height - 25,
+                left: calibrationPoints[_currentPoint].dx - _circleRadius,
+                top: calibrationPoints[_currentPoint].dy - _circleRadius,
                 child: Container(
                   width: 50,
                   height: 50,
@@ -177,11 +231,23 @@ class _CalibrationPageState extends State<CalibrationPage> {
                 ),
               ),
 
+            // Cancel button (only during calibration)
+            if (_calibrating)
+              Positioned(
+                top: 20,
+                right: 20,
+                child: FloatingActionButton(
+                  onPressed: _cancelCalibration,
+                  backgroundColor: Colors.red,
+                  child: const Icon(Icons.cancel, color: Colors.white),
+                ),
+              ),
+
             // Instructions
             Positioned(
               top: 20,
               left: 20,
-              right: 20,
+              right: _calibrating ? 100 : 20, // Leave space for cancel button
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -204,7 +270,7 @@ class _CalibrationPageState extends State<CalibrationPage> {
                     const SizedBox(height: 8),
                     Text(
                       _calibrating
-                          ? 'Look at the yellow circle and keep your eyes focused on it. The calibration will move through ${_calibrationPoints.length} points.'
+                          ? 'Look at the yellow circle and keep your eyes focused on it. The calibration will move through ${calibrationPoints.length} points.'
                           : 'Calibration helps the eye tracker understand where you are looking on the screen. Follow the yellow circle with your eyes as it moves to different positions.',
                       style: const TextStyle(
                         color: Colors.white,
@@ -214,14 +280,14 @@ class _CalibrationPageState extends State<CalibrationPage> {
                     if (_calibrating) ...[
                       const SizedBox(height: 12),
                       LinearProgressIndicator(
-                        value: _currentPoint / _calibrationPoints.length,
+                        value: _currentPoint / calibrationPoints.length,
                         backgroundColor: Colors.grey,
                         valueColor:
                             const AlwaysStoppedAnimation<Color>(Colors.yellow),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Point ${_currentPoint + 1} of ${_calibrationPoints.length}',
+                        'Point ${_currentPoint + 1} of ${calibrationPoints.length}',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 14,
@@ -253,7 +319,7 @@ class _CalibrationPageState extends State<CalibrationPage> {
               ),
 
             // Completion message
-            if (_currentPoint >= _calibrationPoints.length && !_calibrating)
+            if (_currentPoint >= calibrationPoints.length && !_calibrating)
               Center(
                 child: Container(
                   padding: const EdgeInsets.all(24),

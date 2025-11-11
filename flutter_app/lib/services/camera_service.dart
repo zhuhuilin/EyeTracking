@@ -22,7 +22,7 @@ class CameraService extends ChangeNotifier {
   StreamSubscription<TrackingResult>? _trackingSubscription;
   List<cam.CameraDescription> _availableCameras = [];
   cam.CameraDescription? _selectedCamera;
-  Map<String, String> _cameraDeviceIds = {}; // Map camera name to device ID
+  final Map<String, String> _cameraDeviceIds = {}; // Map camera name to device ID
 
   // Camera configuration
   static const cam.ResolutionPreset _resolution = cam.ResolutionPreset.medium;
