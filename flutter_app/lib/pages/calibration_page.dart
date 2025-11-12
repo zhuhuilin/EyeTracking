@@ -4,9 +4,14 @@ import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 
 import '../services/camera_service.dart';
-import '../services/model_registry.dart';
-import '../models/model_info.dart';
-import '../widgets/model_selection_dialog.dart';
+import '../services/tts_service.dart';
+import '../models/calibration_data.dart';
+import '../widgets/countdown_overlay.dart';
+import '../widgets/instructions_overlay.dart';
+import '../widgets/calibration_data_overlay.dart';
+import '../widgets/calibration_settings_dialog.dart';
+import '../widgets/calibration_preview.dart';
+import '../widgets/calibration_setup_panel.dart';
 
 class CalibrationPage extends StatefulWidget {
   const CalibrationPage({super.key});
@@ -23,6 +28,18 @@ class _CalibrationPageState extends State<CalibrationPage> {
   Timer? _pointTimer;
   // Circle radius in pixels (25px for 50px diameter circle)
   static const double _circleRadius = 25.0;
+
+  // Calibration settings
+  CalibrationSettings _settings = const CalibrationSettings();
+
+  // Countdown state
+  bool _showingCountdown = false;
+
+  // Latest tracking result for data overlay
+  ExtendedTrackingResult? _latestTrackingResult;
+
+  // TTS service
+  final TTSService _ttsService = TTSService();
 
   // Get calibration points that ensure circles are fully visible
   List<Offset> _getCalibrationPoints(Size screenSize) {
@@ -42,8 +59,15 @@ class _CalibrationPageState extends State<CalibrationPage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _ttsService.initialize();
+  }
+
+  @override
   void dispose() {
     _pointTimer?.cancel();
+    _ttsService.dispose();
     super.dispose();
   }
 
@@ -84,12 +108,60 @@ class _CalibrationPageState extends State<CalibrationPage> {
       return;
     }
 
+    // Show countdown if enabled
+    if (_settings.showCountdown) {
+      setState(() {
+        _showingCountdown = true;
+      });
+
+      // Speak and show countdown with TTS if enabled
+      if (_settings.enableTTS) {
+        _ttsService.setEnabled(true);
+        _ttsService.setSpeechRate(_settings.ttsSpeechRate);
+
+        // Speak countdown numbers (5, 4, 3, 2, 1)
+        for (int i = 5; i >= 1; i--) {
+          final delay = (5 - i) * 1000; // milliseconds
+          Timer(Duration(milliseconds: delay), () {
+            if (mounted && _calibrating) {
+              _ttsService.speakCountdown(i);
+            }
+          });
+        }
+      }
+
+      // Wait for countdown to complete (5 seconds)
+      _pointTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          // Speak "begin" at the end
+          if (_settings.enableTTS) {
+            _ttsService.speakCountdown(0); // "Begin"
+          }
+
+          setState(() {
+            _showingCountdown = false;
+          });
+          _showCalibrationPoint();
+        }
+      });
+    } else {
+      _showCalibrationPoint();
+    }
+  }
+
+  void _showCalibrationPoint() {
     setState(() {
       // Update the UI to show the current point
     });
 
-    // Show current calibration point for 3 seconds
-    _pointTimer = Timer(const Duration(seconds: 3), () {
+    // Speak instruction if TTS enabled
+    if (_settings.enableTTS && _settings.showInstructions) {
+      final instruction = _getInstructionForPoint(_currentPoint);
+      _ttsService.speakInstruction(instruction);
+    }
+
+    // Show current calibration point for configured duration
+    _pointTimer = Timer(Duration(seconds: _settings.circleDuration), () {
       if (mounted) {
         _recordCalibrationPoint();
         setState(() {
@@ -127,6 +199,11 @@ class _CalibrationPageState extends State<CalibrationPage> {
 
     try {
       await cameraService.finishCalibration();
+
+      // Speak completion message if TTS enabled
+      if (_settings.enableTTS) {
+        _ttsService.speakCompletion();
+      }
 
       // Restore window state
       await _channel.invokeMethod('restoreWindowState');
@@ -181,41 +258,20 @@ class _CalibrationPageState extends State<CalibrationPage> {
     });
   }
 
-  void _showModelSelector() async {
-    final cameraService = Provider.of<CameraService>(context, listen: false);
-    final selectedModelId = await showDialog<String>(
-      context: context,
-      builder: (context) => ModelSelectionDialog(
-        currentModelId: cameraService.selectedModelId,
-      ),
-    );
 
-    if (selectedModelId != null && mounted) {
-      final success = await cameraService.setModel(selectedModelId);
-      if (success) {
-        final registry = ModelRegistry.instance;
-        final model = registry.getModelById(selectedModelId);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Model changed to: ${model?.fullDisplayName ?? selectedModelId}'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to change model'),
-              backgroundColor: Colors.red,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
+  String _getInstructionForPoint(int pointIndex) {
+    const positions = [
+      'top-left corner',
+      'top-right corner',
+      'center',
+      'bottom-left corner',
+      'bottom-right corner',
+    ];
+
+    if (pointIndex < positions.length) {
+      return 'Look at the yellow circle in the ${positions[pointIndex]}';
     }
+    return 'Follow the yellow circle with your eyes';
   }
 
   @override
@@ -339,54 +395,45 @@ class _CalibrationPageState extends State<CalibrationPage> {
               ),
             ),
 
-            // Start/Cancel button and model selector
+            // Pre-calibration setup screen with camera preview
             if (!_calibrating)
               Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: _startCalibration,
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Start Calibration'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 16,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Camera preview with face detection
+                      Container(
+                        constraints: const BoxConstraints(
+                          maxWidth: 800,
+                          maxHeight: 600,
                         ),
-                        textStyle: const TextStyle(fontSize: 18),
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
+                        margin: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white, width: 2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: const CalibrationPreview(),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Consumer<CameraService>(
-                      builder: (context, cameraService, child) {
-                        final registry = ModelRegistry.instance;
-                        final currentModel = cameraService.selectedModelId != null
-                            ? registry.getModelById(cameraService.selectedModelId!)
-                            : null;
-                        final modelName = currentModel?.fullDisplayName ??
-                            registry.getDefaultModel()?.fullDisplayName ??
-                            'Default Model';
 
-                        return OutlinedButton.icon(
-                          onPressed: _showModelSelector,
-                          icon: const Icon(Icons.memory),
-                          label: Text('Model: $modelName'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
-                            ),
-                            textStyle: const TextStyle(fontSize: 16),
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white, width: 2),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                      // Setup panel with camera/model selection and settings
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 600),
+                        child: CalibrationSetupPanel(
+                          settings: _settings,
+                          onSettingsChanged: (newSettings) {
+                            setState(() {
+                              _settings = newSettings;
+                            });
+                          },
+                          onStartCalibration: _startCalibration,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
@@ -428,6 +475,38 @@ class _CalibrationPageState extends State<CalibrationPage> {
                     ],
                   ),
                 ),
+              ),
+
+            // Countdown overlay
+            if (_calibrating && _showingCountdown && _currentPoint < calibrationPoints.length)
+              CountdownOverlay(
+                durationSeconds: 5,
+                showFlash: true,
+                position: calibrationPoints[_currentPoint],
+                onComplete: () {
+                  // Countdown complete
+                },
+              ),
+
+            // Instructions overlay
+            if (_calibrating && _settings.showInstructions && !_showingCountdown)
+              InstructionsOverlay(
+                instruction: _getInstructionForPoint(_currentPoint),
+                currentPoint: _currentPoint + 1,
+                totalPoints: calibrationPoints.length,
+                tip: _currentPoint == 0
+                    ? 'Keep your head still and follow only with your eyes'
+                    : 'Blink normally, no need to strain',
+                visible: true,
+                position: InstructionPosition.bottom,
+              ),
+
+            // Data overlay (deferred - requires tracking result stream integration)
+            if (_calibrating && _settings.showDataOverlay)
+              CalibrationDataOverlay(
+                trackingResult: _latestTrackingResult,
+                visible: true,
+                position: DataOverlayPosition.topRight,
               ),
           ],
         ),
