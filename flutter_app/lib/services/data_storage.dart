@@ -20,14 +20,14 @@ abstract class DataStorage {
 class LocalStorage implements DataStorage {
   static Database? _database;
   static const String _databaseName = 'eyeball_tracking.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 2;
 
   @override
   Future<void> initialize() async {
     _database = await openDatabase(
       join(await getDatabasesPath(), _databaseName),
-      onCreate: (db, version) {
-        return db.execute('''
+      onCreate: (db, version) async {
+        await db.execute('''
           CREATE TABLE sessions(
             id TEXT PRIMARY KEY,
             userId TEXT,
@@ -36,10 +36,80 @@ class LocalStorage implements DataStorage {
             dataPoints TEXT
           )
           ''');
+        await db.execute('''
+          CREATE TABLE models(
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            displayName TEXT NOT NULL,
+            type TEXT NOT NULL,
+            variant TEXT NOT NULL,
+            format TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            filePath TEXT NOT NULL,
+            sizeMB REAL NOT NULL,
+            downloaded INTEGER DEFAULT 0,
+            addedByAdminId TEXT,
+            metadata TEXT,
+            accuracyRating REAL DEFAULT 0.5,
+            speedRating REAL DEFAULT 0.5,
+            createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+          ''');
+        await db.execute('''
+          CREATE TABLE calibration_profiles(
+            id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
+            modelId TEXT,
+            calibratedAt TEXT NOT NULL,
+            baselineDistance REAL,
+            baselineBlinkRate REAL,
+            calibrationData TEXT,
+            qualityScore REAL,
+            metadata TEXT
+          )
+          ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE models(
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              displayName TEXT NOT NULL,
+              type TEXT NOT NULL,
+              variant TEXT NOT NULL,
+              format TEXT NOT NULL,
+              platform TEXT NOT NULL,
+              filePath TEXT NOT NULL,
+              sizeMB REAL NOT NULL,
+              downloaded INTEGER DEFAULT 0,
+              addedByAdminId TEXT,
+              metadata TEXT,
+              accuracyRating REAL DEFAULT 0.5,
+              speedRating REAL DEFAULT 0.5,
+              createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            ''');
+          await db.execute('''
+            CREATE TABLE calibration_profiles(
+              id TEXT PRIMARY KEY,
+              userId TEXT NOT NULL,
+              modelId TEXT,
+              calibratedAt TEXT NOT NULL,
+              baselineDistance REAL,
+              baselineBlinkRate REAL,
+              calibrationData TEXT,
+              qualityScore REAL,
+              metadata TEXT
+            )
+            ''');
+        }
       },
       version: _databaseVersion,
     );
   }
+
+  Database? get database => _database;
 
   @override
   Future<void> saveTestSession(TestSession session) async {
