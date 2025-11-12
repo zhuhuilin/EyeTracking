@@ -78,6 +78,8 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
             restoreWindowState(result: result)
         case "setFaceDetectionBackend":
             setFaceDetectionBackend(call.arguments, result: result)
+        case "setModel":
+            setModel(call.arguments, result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -378,6 +380,58 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
         default:
             return 0
         }
+    }
+
+    private func setModel(_ arguments: Any?, result: @escaping FlutterResult) {
+        guard let engine = trackingEngine else {
+            result(FlutterError(code: "ENGINE_NOT_INITIALIZED", message: "Tracking engine not initialized", details: nil))
+            return
+        }
+
+        guard let args = arguments as? [String: Any],
+              let modelId = args["modelId"] as? String,
+              let modelPath = args["modelPath"] as? String,
+              let modelType = args["modelType"] as? String,
+              let modelVariant = args["modelVariant"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing model parameters", details: nil))
+            return
+        }
+
+        print("Setting model: \(modelId)")
+        print("  Path: \(modelPath)")
+        print("  Type: \(modelType)")
+        print("  Variant: \(modelVariant)")
+
+        // Handle YOLO models specifically
+        if modelType.lowercased() == "yolo" {
+            // Set YOLO variant in tracking engine
+            let variantCString = (modelVariant.prefix(1).lowercased() as NSString).utf8String
+            if let variantPtr = variantCString {
+                set_yolo_model_variant(engine, variantPtr)
+                print("Set YOLO variant to: \(modelVariant)")
+            }
+
+            // If YOLO backend not selected, select it
+            if faceBackendSelection != .yolo {
+                faceBackendSelection = .yolo
+                set_face_detector_backend(engine, 1) // 1 = YOLO
+            }
+
+            // Ensure YOLO detector is ready
+            _ = ensureYoloDetectorReady()
+        } else if modelType.lowercased() == "yunet" {
+            if faceBackendSelection != .yunet {
+                faceBackendSelection = .yunet
+                set_face_detector_backend(engine, 2) // 2 = YuNet
+            }
+        } else if modelType.lowercased() == "haar" {
+            if faceBackendSelection != .haar {
+                faceBackendSelection = .haar
+                set_face_detector_backend(engine, 3) // 3 = Haar
+            }
+        }
+
+        result(true)
     }
 }
 

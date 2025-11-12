@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 
 import '../services/camera_service.dart';
+import '../services/model_registry.dart';
+import '../models/model_info.dart';
+import '../widgets/model_selection_dialog.dart';
 
 class CalibrationPage extends StatefulWidget {
   const CalibrationPage({super.key});
@@ -178,6 +181,43 @@ class _CalibrationPageState extends State<CalibrationPage> {
     });
   }
 
+  void _showModelSelector() async {
+    final cameraService = Provider.of<CameraService>(context, listen: false);
+    final selectedModelId = await showDialog<String>(
+      context: context,
+      builder: (context) => ModelSelectionDialog(
+        currentModelId: cameraService.selectedModelId,
+      ),
+    );
+
+    if (selectedModelId != null && mounted) {
+      final success = await cameraService.setModel(selectedModelId);
+      if (success) {
+        final registry = ModelRegistry.instance;
+        final model = registry.getModelById(selectedModelId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Model changed to: ${model?.fullDisplayName ?? selectedModelId}'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to change model'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -299,22 +339,54 @@ class _CalibrationPageState extends State<CalibrationPage> {
               ),
             ),
 
-            // Start/Cancel button
+            // Start/Cancel button and model selector
             if (!_calibrating)
               Center(
-                child: ElevatedButton.icon(
-                  onPressed: _startCalibration,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Start Calibration'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 16,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: _startCalibration,
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Start Calibration'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 16,
+                        ),
+                        textStyle: const TextStyle(fontSize: 18),
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
-                    textStyle: const TextStyle(fontSize: 18),
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
+                    const SizedBox(height: 16),
+                    Consumer<CameraService>(
+                      builder: (context, cameraService, child) {
+                        final registry = ModelRegistry.instance;
+                        final currentModel = cameraService.selectedModelId != null
+                            ? registry.getModelById(cameraService.selectedModelId!)
+                            : null;
+                        final modelName = currentModel?.fullDisplayName ??
+                            registry.getDefaultModel()?.fullDisplayName ??
+                            'Default Model';
+
+                        return OutlinedButton.icon(
+                          onPressed: _showModelSelector,
+                          icon: const Icon(Icons.memory),
+                          label: Text('Model: $modelName'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            textStyle: const TextStyle(fontSize: 16),
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white, width: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
 

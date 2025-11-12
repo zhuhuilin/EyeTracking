@@ -44,6 +44,7 @@ CTrackingResult process_frame_with_override(void* engine,
                                             float norm_height);
 void set_camera_parameters(void* engine, double focal_length, double principal_x, double principal_y);
 void set_face_detector_backend(void* engine, int backend);
+void set_yolo_model_variant(void* engine, const char* variant);
 
 #ifdef __cplusplus
 }

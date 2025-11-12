@@ -6,8 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart' as cam;
 import 'package:camera_macos/camera_macos.dart' as cam_macos;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_state.dart';
+import '../models/model_info.dart';
+import 'model_registry.dart';
 
 enum FaceDetectionBackend {
   auto,
@@ -83,6 +86,7 @@ class CameraService extends ChangeNotifier {
   final Map<String, String> _cameraDeviceIds = {}; // Map camera name to device ID
   TrackingResult? _latestTrackingResult;
   FaceDetectionBackend _faceDetectionBackend = FaceDetectionBackend.auto;
+  String? _selectedModelId; // Currently selected model ID
   bool _nativeEngineReady = false;
 
   // Camera configuration
@@ -100,6 +104,7 @@ class CameraService extends ChangeNotifier {
   String? get selectedCameraDeviceId =>
       _selectedCamera != null ? _cameraDeviceIds[_selectedCamera!.name] : null;
   FaceDetectionBackend get faceDetectionBackend => _faceDetectionBackend;
+  String? get selectedModelId => _selectedModelId;
   bool get _usingMacOSCamera => !kIsWeb && Platform.isMacOS;
   bool get hasMacCameraController => _macCameraController != null;
 
@@ -200,6 +205,7 @@ class CameraService extends ChangeNotifier {
           await _channel.invokeMethod('initializeTrackingEngine');
           _nativeEngineReady = true;
           await _applyFaceDetectionBackend();
+          await _loadSelectedModel();
         }
         return;
       }
@@ -224,6 +230,7 @@ class CameraService extends ChangeNotifier {
         await _channel.invokeMethod('initializeTrackingEngine');
         _nativeEngineReady = true;
         await _applyFaceDetectionBackend();
+        await _loadSelectedModel();
       }
 
       print('Camera service initialized with: ${_selectedCamera!.name}');
@@ -629,6 +636,89 @@ class CameraService extends ChangeNotifier {
       print('Applied face detector backend: ${_faceDetectionBackend.label}');
     } catch (e) {
       print('Failed to apply face detection backend: $e');
+    }
+  }
+
+  /// Set the detection model by model ID
+  /// Returns true if model was successfully loaded, false otherwise
+  Future<bool> setModel(String modelId) async {
+    try {
+      final ModelRegistry registry = ModelRegistry.instance;
+      final ModelInfo? model = registry.getModelById(modelId);
+
+      if (model == null) {
+        print('Model not found: $modelId');
+        return false;
+      }
+
+      if (!model.isAvailable) {
+        print('Model not available (not downloaded): ${model.fullDisplayName}');
+        return false;
+      }
+
+      // Save selected model ID to preferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('selected_model_id', modelId);
+
+      _selectedModelId = modelId;
+
+      // Apply model to native layer if engine is ready
+      if (_nativeEngineReady) {
+        await _applyModel(model);
+      }
+
+      notifyListeners();
+      print('Selected model: ${model.fullDisplayName}');
+      return true;
+    } catch (e) {
+      print('Failed to set model: $e');
+      return false;
+    }
+  }
+
+  /// Apply the selected model to the native tracking engine
+  Future<void> _applyModel(ModelInfo model) async {
+    if (!_nativeEngineReady) {
+      return;
+    }
+
+    try {
+      await _channel.invokeMethod('setModel', {
+        'modelId': model.id,
+        'modelPath': model.filePath,
+        'modelType': model.type.name,
+        'modelVariant': model.variant.name,
+        'modelFormat': model.format.name,
+      });
+      print('Applied model to native layer: ${model.fullDisplayName}');
+    } catch (e) {
+      print('Failed to apply model to native layer: $e');
+      rethrow;
+    }
+  }
+
+  /// Load the selected model from preferences
+  Future<void> _loadSelectedModel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedModelId = prefs.getString('selected_model_id');
+
+      if (savedModelId != null) {
+        final registry = ModelRegistry.instance;
+        final model = registry.getModelById(savedModelId);
+
+        if (model != null && model.isAvailable) {
+          _selectedModelId = savedModelId;
+          if (_nativeEngineReady) {
+            await _applyModel(model);
+          }
+          print('Loaded saved model: ${model.fullDisplayName}');
+        } else {
+          print('Saved model not available, will use default');
+        }
+      }
+    } catch (e) {
+      print('Failed to load selected model: $e');
     }
   }
 
