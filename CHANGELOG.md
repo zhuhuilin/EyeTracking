@@ -8,11 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **YOLO Face Detector Backend**: Integrated optional YOLO-based face detection for maximum accuracy, with runtime switching between YOLO, YuNet, and Haar backends.
+- **Model Selection UI**: Camera selection dialog now exposes an AI-model dropdown so operators can change the face detector without rebuilding the app.
 - **Real Camera Frame Processing**: Implemented actual camera frame processing in Swift plugin, replacing mock timer-based data with real-time C++ computer vision processing
 - **Screen Corner Calibration**: Updated calibration page to position circles at actual desktop corners using fullscreen mode
 - **CHANGELOG.md**: Created this changelog file to track project changes
+- **CoreML YOLO11m Backend**: Converted `yolo11m.pt` to a `yolo11m.mlpackage` CoreML model and wired it into the macOS plugin so the preview widget can run YOLO detection/tracking without touching YuNet/Haar.
 
 ### Changed
+- **Face Detection Pipeline**: Replaced the fragile Haar-only approach with OpenCV's YuNet ONNX detector plus Haar fallback
+  - Bundled YuNet model (`face_detection_yunet_2023mar.onnx`) with the macOS app and native core
+  - Added environment override (`EYETRACKING_FACE_MODEL`) and automatic resource discovery
+  - Improved robustness against lighting/pose variations while maintaining legacy cascade as a safety net
 - **Swift Plugin Architecture**: Modified `EyeTrackingPlugin.swift` to process real camera frames instead of generating mock data
   - Removed timer-based tracking simulation
   - Added real frame data conversion and C++ engine integration
@@ -26,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added floating cancel button for easy calibration interruption
   - Platform-specific window management using NSWindow APIs
 - **Coordinate System**: Changed from window-relative to screen-absolute coordinates for better accuracy
+- **Native Bridge**: Added `process_frame_with_override` so externally-computed face boxes (e.g., CoreML YOLO) can flow through the existing C++ gaze pipeline while keeping YuNet/Haar behaviour unchanged.
 
 ### Technical Details
 

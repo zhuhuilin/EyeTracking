@@ -31,6 +31,42 @@ This document outlines the tools and libraries required to build and run the Eye
   ```
 - **Detection**: Available via pkg-config (`pkg-config --modversion opencv4`)
 
+### YuNet Face Detection Model
+- **Model**: `face_detection_yunet_2023mar.onnx` (bundled in `core/models/`)
+- **Purpose**: Primary face detector (OpenCV FaceDetectorYN) with Haar cascade fallback
+- **Runtime Path Resolution**:
+  - Automatically copied into the macOS app bundle at `Runner.app/Contents/Resources/`
+  - Override by setting `EYETRACKING_FACE_MODEL=/absolute/path/to/face_detection_yunet_2023mar.onnx`
+- **Installation**: Model is version-controlled; no manual download required
+
+### YOLO Face Detection Model (CoreML, macOS Preview)
+- **Model**: `yolo11m.mlpackage` (exported from Ultralytics `yolo11m.pt` with `nms=True`)
+- **Purpose**: High-accuracy backend accelerated by CoreML for the macOS preview widget (selected via the camera dialog or `EYETRACKING_FACE_BACKEND=yolo`)
+- **Location**: Place the compiled package at `flutter_app/macos/Runner/Resources/yolo11m.mlpackage`
+- **Conversion**:
+  ```bash
+  python3 -m pip install --user ultralytics coremltools
+  ~/Library/Python/3.9/bin/yolo export model=yolo11m.pt format=coreml imgsz=640 nms=True
+  mv yolo11m.mlpackage flutter_app/macos/Runner/Resources/
+  ```
+  The build phase named **Copy Face Detection Models** will copy `.mlpackage` folders into `Runner.app/Contents/Resources/` automatically.
+- **Notes**:
+  - The CoreML path is only required on macOS; iOS/iPadOS support will reuse the same asset.
+  - The plugin falls back to YuNet/Haar automatically if the CoreML model is missing.
+
+### YOLO Face Detection Model (Legacy ONNX Fallback)
+- **Model**: `yolov5n-face.onnx` or any YOLOv5/YOLOv8 face detector with standard output tensors
+- **Purpose**: Retained for the C++ core and non-macOS builds
+- **Default Path**: `core/models/yolov5n-face.onnx`
+- **Environment Override**: `EYETRACKING_YOLO_FACE_MODEL=/absolute/path/to/model.onnx`
+- **Download**:
+  ```bash
+  curl -L -H "Accept: application/octet-stream" \
+    -o core/models/yolov5n-face.onnx \
+    "https://github.com/deepcam-cn/yolov5-face/releases/download/0.0/yolov5n-face.onnx"
+  ```
+  > If GitHub returns HTML, clone the upstream repo using Git LFS (`git lfs install && git clone ...`) and copy the ONNX file manually.
+
 ## Flutter Development Environment
 
 ### Flutter SDK

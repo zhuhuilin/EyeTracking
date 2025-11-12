@@ -7,6 +7,29 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
     private var eventSink: FlutterEventSink?
     private var savedWindowFrame: NSRect?
     private var wasFullscreen = false
+    private var faceBackendSelection: FaceBackendSelection = .auto
+    private var yoloDetector: CoreMLYoloDetector?
+    private var yoloDetectorFailed = false
+
+    private enum FaceBackendSelection {
+        case auto
+        case yolo
+        case yunet
+        case haar
+
+        init(name: String) {
+            switch name.lowercased() {
+            case "yolo", "yolov5", "yolov8":
+                self = .yolo
+            case "yunet":
+                self = .yunet
+            case "haar", "haarcascade":
+                self = .haar
+            default:
+                self = .auto
+            }
+        }
+    }
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
@@ -53,6 +76,8 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
             saveWindowState(result: result)
         case "restoreWindowState":
             restoreWindowState(result: result)
+        case "setFaceDetectionBackend":
+            setFaceDetectionBackend(call.arguments, result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -106,11 +131,15 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
             return
         }
 
+        let frameBytes = frameData.data
+        let overrideRect = detectFaceRectIfNeeded(frameData: frameBytes, width: width, height: height)
+
         guard let cResult = processFrameData(
             engine: engine,
-            frameData: frameData,
+            frameBytes: frameBytes,
             width: width,
-            height: height
+            height: height,
+            overrideRect: overrideRect
         ) else {
             result(FlutterError(code: "FRAME_PROCESSING_FAILED",
                                 message: "Failed to process frame",
@@ -209,17 +238,86 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
     }
 
     private func processFrameData(engine: UnsafeMutableRawPointer,
-                                  frameData: FlutterStandardTypedData,
+                                  frameBytes: Data,
                                   width: Int,
-                                  height: Int) -> CTrackingResult? {
-        return frameData.data.withUnsafeBytes { buffer -> CTrackingResult? in
+                                  height: Int,
+                                  overrideRect: CGRect?) -> CTrackingResult? {
+        return frameBytes.withUnsafeBytes { buffer -> CTrackingResult? in
             guard let baseAddress = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                 return nil
             }
 
             let mutablePointer = UnsafeMutablePointer(mutating: baseAddress)
-            return process_frame(engine, mutablePointer, Int32(width), Int32(height))
+            if let rect = overrideRect {
+                let normalized = clampNormalized(rect: rect)
+                return process_frame_with_override(
+                    engine,
+                    mutablePointer,
+                    Int32(width),
+                    Int32(height),
+                    true,
+                    Float(normalized.origin.x),
+                    Float(normalized.origin.y),
+                    Float(normalized.size.width),
+                    Float(normalized.size.height)
+                )
+            } else {
+                return process_frame_with_override(
+                    engine,
+                    mutablePointer,
+                    Int32(width),
+                    Int32(height),
+                    false,
+                    0,
+                    0,
+                    0,
+                    0
+                )
+            }
         }
+    }
+
+    private func clampNormalized(rect: CGRect) -> CGRect {
+        let clampedX = max(0.0, min(1.0, rect.origin.x))
+        let clampedY = max(0.0, min(1.0, rect.origin.y))
+        let clampedWidth = max(0.0, min(1.0 - clampedX, rect.size.width))
+        let clampedHeight = max(0.0, min(1.0 - clampedY, rect.size.height))
+        return CGRect(x: clampedX, y: clampedY, width: clampedWidth, height: clampedHeight)
+    }
+
+    private func detectFaceRectIfNeeded(frameData: Data, width: Int, height: Int) -> CGRect? {
+        guard width > 0, height > 0 else { return nil }
+        guard shouldUseCoreMLDetector(), let detector = yoloDetector else {
+            return nil
+        }
+        return detector.detectStrongestFace(in: frameData, width: width, height: height)?.rect
+    }
+
+    private func shouldUseCoreMLDetector() -> Bool {
+        switch faceBackendSelection {
+        case .yolo:
+            return ensureYoloDetectorReady()
+        case .auto:
+            return ensureYoloDetectorReady()
+        case .yunet, .haar:
+            return false
+        }
+    }
+
+    private func ensureYoloDetectorReady() -> Bool {
+        if yoloDetector != nil {
+            return true
+        }
+        if yoloDetectorFailed {
+            return false
+        }
+        guard let detector = CoreMLYoloDetector() else {
+            yoloDetectorFailed = true
+            NSLog("[YOLO] Failed to initialize CoreML detector, falling back to native backends")
+            return false
+        }
+        yoloDetector = detector
+        return true
     }
 
     private func buildTrackingResultDictionary(from result: CTrackingResult) -> [String: Any] {
@@ -229,8 +327,57 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
             "gazeAngleY": result.gaze_angle_y,
             "eyesFocused": result.eyes_focused,
             "headMoving": result.head_moving,
-            "shouldersMoving": result.shoulders_moving
+            "shouldersMoving": result.shoulders_moving,
+            "faceDetected": result.face_detected,
+            "faceRect": [
+                "detected": result.face_detected,
+                "x": result.face_rect_x,
+                "y": result.face_rect_y,
+                "width": result.face_rect_width,
+                "height": result.face_rect_height
+            ]
         ]
+    }
+
+    private func setFaceDetectionBackend(_ arguments: Any?, result: @escaping FlutterResult) {
+        guard let engine = trackingEngine else {
+            result(FlutterError(code: "ENGINE_NOT_INITIALIZED", message: "Tracking engine not initialized", details: nil))
+            return
+        }
+
+        guard let args = arguments as? [String: Any],
+              let backendName = args["backend"] as? String else {
+            result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing backend parameter", details: nil))
+            return
+        }
+
+        let selection = FaceBackendSelection(name: backendName)
+        faceBackendSelection = selection
+
+        if selection == .yolo || selection == .auto {
+            if yoloDetectorFailed {
+                yoloDetectorFailed = false
+                yoloDetector = nil
+            }
+            _ = ensureYoloDetectorReady()
+        }
+
+        let backendId = EyeTrackingPlugin.backendId(for: backendName)
+        set_face_detector_backend(engine, backendId)
+        result(true)
+    }
+
+    private static func backendId(for backend: String) -> Int32 {
+        switch backend.lowercased() {
+        case "yolo", "yolov5", "yolov8":
+            return 1
+        case "yunet":
+            return 2
+        case "haar", "haarcascade":
+            return 3
+        default:
+            return 0
+        }
     }
 }
 

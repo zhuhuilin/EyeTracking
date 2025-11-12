@@ -5,9 +5,10 @@ This document outlines all functions and features that need to be implemented or
 ## C++ Core Engine (core/src/tracking_engine.cpp)
 
 ### Face Detection & Distance Calculation
-- [x] `detectFace()` - Basic Haar cascade implementation
+- [x] `detectFace()` - YuNet-based detection with Haar fallback
 - [x] `calculateFaceDistance()` - Distance calculation using focal length
-- [ ] **IMPROVE**: Replace Haar cascade with more robust face detection (DNN-based)
+- [x] **IMPROVE**: Replace Haar cascade with more robust face detection (YuNet DNN + Haar fallback)
+- [x] **IMPROVE**: Added YOLO/Auto-selectable backend with runtime switching and UI toggle for accuracy-critical flows
 - [ ] **IMPLEMENT**: Add face tracking across frames for better stability
 
 ### Eye Tracking & Gaze Estimation

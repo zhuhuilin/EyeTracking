@@ -1,3 +1,4 @@
+import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 
 enum UserRole { user, admin }
@@ -77,6 +78,8 @@ class TrackingResult {
   final bool eyesFocused;
   final bool headMoving;
   final bool shouldersMoving;
+  final bool faceDetected;
+  final Rect? faceRect;
 
   TrackingResult({
     required this.faceDistance,
@@ -85,6 +88,8 @@ class TrackingResult {
     required this.eyesFocused,
     required this.headMoving,
     required this.shouldersMoving,
+    required this.faceDetected,
+    this.faceRect,
   });
 
   Map<String, dynamic> toJson() {
@@ -95,10 +100,34 @@ class TrackingResult {
       'eyesFocused': eyesFocused,
       'headMoving': headMoving,
       'shouldersMoving': shouldersMoving,
+      'faceDetected': faceDetected,
+      'faceRect': faceRect != null
+          ? {
+              'detected': true,
+              'x': faceRect!.left,
+              'y': faceRect!.top,
+              'width': faceRect!.width,
+              'height': faceRect!.height,
+            }
+          : {
+              'detected': false,
+            },
     };
   }
 
   factory TrackingResult.fromJson(Map<String, dynamic> json) {
+    Rect? rect;
+    final rectData = json['faceRect'];
+    if (rectData is Map && (rectData['detected'] == true)) {
+      final double? x = (rectData['x'] as num?)?.toDouble();
+      final double? y = (rectData['y'] as num?)?.toDouble();
+      final double? width = (rectData['width'] as num?)?.toDouble();
+      final double? height = (rectData['height'] as num?)?.toDouble();
+      if (x != null && y != null && width != null && height != null) {
+        rect = Rect.fromLTWH(x, y, width, height);
+      }
+    }
+
     return TrackingResult(
       faceDistance: json['faceDistance'] ?? 0.0,
       gazeAngleX: json['gazeAngleX'] ?? 0.0,
@@ -106,6 +135,8 @@ class TrackingResult {
       eyesFocused: json['eyesFocused'] ?? false,
       headMoving: json['headMoving'] ?? false,
       shouldersMoving: json['shouldersMoving'] ?? false,
+      faceDetected: json['faceDetected'] ?? rect != null,
+      faceRect: rect,
     );
   }
 }

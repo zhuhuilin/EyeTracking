@@ -15,13 +15,35 @@ typedef struct {
     bool eyes_focused;
     bool head_moving;
     bool shoulders_moving;
+    bool face_detected;
+    double face_rect_x;
+    double face_rect_y;
+    double face_rect_width;
+    double face_rect_height;
 } CTrackingResult;
+
+typedef enum {
+    FACE_BACKEND_AUTO = 0,
+    FACE_BACKEND_YOLO = 1,
+    FACE_BACKEND_YUNET = 2,
+    FACE_BACKEND_HAAR = 3
+} FaceDetectorBackendC;
 
 void* create_tracking_engine(void);
 void destroy_tracking_engine(void* engine);
 bool initialize_tracking_engine(void* engine);
 CTrackingResult process_frame(void* engine, unsigned char* frame_data, int width, int height);
+CTrackingResult process_frame_with_override(void* engine,
+                                            unsigned char* frame_data,
+                                            int width,
+                                            int height,
+                                            bool has_override,
+                                            float norm_x,
+                                            float norm_y,
+                                            float norm_width,
+                                            float norm_height);
 void set_camera_parameters(void* engine, double focal_length, double principal_x, double principal_y);
+void set_face_detector_backend(void* engine, int backend);
 
 #ifdef __cplusplus
 }

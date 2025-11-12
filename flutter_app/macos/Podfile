@@ -39,4 +39,42 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
   end
+
+  # Add script to copy face detection models to app bundle
+  project = installer.pods_project
+  runner_target = project.targets.find { |t| t.name == 'Runner' }
+
+  unless runner_target
+    # If we can't find Runner in Pods project, try the main project
+    main_project_path = File.join(File.dirname(__FILE__), 'Runner.xcodeproj')
+    if File.exist?(main_project_path)
+      require 'xcodeproj'
+      main_project = Xcodeproj::Project.open(main_project_path)
+      runner_target = main_project.targets.find { |t| t.name == 'Runner' }
+
+      if runner_target
+        # Check if script phase already exists
+        script_name = 'Copy Face Detection Models'
+        existing_phase = runner_target.shell_script_build_phases.find { |phase| phase.name == script_name }
+
+        unless existing_phase
+          phase = runner_target.new_shell_script_build_phase(script_name)
+          phase.shell_script = <<-SCRIPT
+#!/bin/bash
+# Copy model files to app bundle
+RESOURCES_DIR="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/Resources"
+mkdir -p "$RESOURCES_DIR"
+SOURCE_DIR="$PROJECT_DIR/Runner/Resources"
+cp -f "$SOURCE_DIR"/*.onnx "$RESOURCES_DIR/" 2>/dev/null || true
+cp -f "$SOURCE_DIR"/*.xml "$RESOURCES_DIR/" 2>/dev/null || true
+cp -rf "$SOURCE_DIR"/*.mlpackage "$RESOURCES_DIR/" 2>/dev/null || true
+cp -rf "$SOURCE_DIR"/*.mlmodel "$RESOURCES_DIR/" 2>/dev/null || true
+echo "Copied face detection models to app bundle"
+          SCRIPT
+          main_project.save
+          puts "✓ Added 'Copy Face Detection Models' build phase to Runner target"
+        end
+      end
+    end
+  end
 end

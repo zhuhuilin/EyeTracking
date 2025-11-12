@@ -1,12 +1,68 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:io' show Platform;
+import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart' as cam;
 import 'package:camera_macos/camera_macos.dart' as cam_macos;
 
 import '../models/app_state.dart';
+
+enum FaceDetectionBackend {
+  auto,
+  yolo,
+  yunet,
+  haar,
+}
+
+extension FaceDetectionBackendX on FaceDetectionBackend {
+  String get label {
+    switch (this) {
+      case FaceDetectionBackend.yolo:
+        return 'YOLO (High Accuracy)';
+      case FaceDetectionBackend.yunet:
+        return 'YuNet (Balanced)';
+      case FaceDetectionBackend.haar:
+        return 'Haar Cascade (Legacy)';
+      case FaceDetectionBackend.auto:
+      default:
+        return 'Auto (Smart Fallback)';
+    }
+  }
+
+  String get channelValue {
+    switch (this) {
+      case FaceDetectionBackend.yolo:
+        return 'yolo';
+      case FaceDetectionBackend.yunet:
+        return 'yunet';
+      case FaceDetectionBackend.haar:
+        return 'haar';
+      case FaceDetectionBackend.auto:
+      default:
+        return 'auto';
+    }
+  }
+
+  static FaceDetectionBackend fromChannelValue(String value) {
+    final normalized = value.toLowerCase();
+    switch (normalized) {
+      case 'yolo':
+      case 'yolov5':
+      case 'yolov8':
+        return FaceDetectionBackend.yolo;
+      case 'yunet':
+        return FaceDetectionBackend.yunet;
+      case 'haar':
+      case 'haarcascade':
+        return FaceDetectionBackend.haar;
+      case 'auto':
+      default:
+        return FaceDetectionBackend.auto;
+    }
+  }
+}
 
 class CameraService extends ChangeNotifier {
   static const MethodChannel _channel = MethodChannel(
@@ -17,12 +73,17 @@ class CameraService extends ChangeNotifier {
   );
 
   cam.CameraController? _cameraController;
+  cam_macos.CameraMacOSController? _macCameraController;
   bool _isInitialized = false;
   bool _isTracking = false;
+  bool _macImageStreamActive = false;
   StreamSubscription<TrackingResult>? _trackingSubscription;
   List<cam.CameraDescription> _availableCameras = [];
   cam.CameraDescription? _selectedCamera;
   final Map<String, String> _cameraDeviceIds = {}; // Map camera name to device ID
+  TrackingResult? _latestTrackingResult;
+  FaceDetectionBackend _faceDetectionBackend = FaceDetectionBackend.auto;
+  bool _nativeEngineReady = false;
 
   // Camera configuration
   static const cam.ResolutionPreset _resolution = cam.ResolutionPreset.medium;
@@ -33,10 +94,14 @@ class CameraService extends ChangeNotifier {
       StreamController<TrackingResult>.broadcast();
 
   Stream<TrackingResult> get trackingResults => _trackingController.stream;
+  TrackingResult? get latestTrackingResult => _latestTrackingResult;
   List<cam.CameraDescription> get availableCameras => _availableCameras;
   cam.CameraDescription? get selectedCamera => _selectedCamera;
   String? get selectedCameraDeviceId =>
       _selectedCamera != null ? _cameraDeviceIds[_selectedCamera!.name] : null;
+  FaceDetectionBackend get faceDetectionBackend => _faceDetectionBackend;
+  bool get _usingMacOSCamera => !kIsWeb && Platform.isMacOS;
+  bool get hasMacCameraController => _macCameraController != null;
 
   Future<List<cam.CameraDescription>> detectCameras() async {
     try {
@@ -127,6 +192,18 @@ class CameraService extends ChangeNotifier {
             orElse: () => _availableCameras.first,
           );
 
+      if (_usingMacOSCamera) {
+        _cameraController = null;
+        _isInitialized = true;
+        notifyListeners();
+        if (!_nativeEngineReady) {
+          await _channel.invokeMethod('initializeTrackingEngine');
+          _nativeEngineReady = true;
+          await _applyFaceDetectionBackend();
+        }
+        return;
+      }
+
       if (_cameraController != null) {
         await _cameraController!.dispose();
       }
@@ -139,10 +216,15 @@ class CameraService extends ChangeNotifier {
       );
 
       await _cameraController!.initialize();
-      _isInitialized = true;
 
-      // Initialize native tracking engine
-      await _channel.invokeMethod('initializeTrackingEngine');
+      _isInitialized = true;
+      notifyListeners();
+
+      if (!_nativeEngineReady) {
+        await _channel.invokeMethod('initializeTrackingEngine');
+        _nativeEngineReady = true;
+        await _applyFaceDetectionBackend();
+      }
 
       print('Camera service initialized with: ${_selectedCamera!.name}');
     } catch (e) {
@@ -182,47 +264,89 @@ class CameraService extends ChangeNotifier {
   }
 
   Future<void> startTracking() async {
-    if (!_isInitialized || _isTracking) return;
+    print('[CameraService] startTracking() called');
+    print('[CameraService] - isInitialized: $_isInitialized');
+    print('[CameraService] - isTracking: $_isTracking');
+    print('[CameraService] - usingMacOSCamera: $_usingMacOSCamera');
+    print('[CameraService] - macCameraController: ${_macCameraController != null}');
+
+    if (!_isInitialized) {
+      print('[CameraService] Not initialized, initializing first...');
+      await initialize();
+    }
+    if (_usingMacOSCamera && _macCameraController == null) {
+      print('[CameraService] startTracking waiting: macOS controller not attached');
+      return;
+    }
+    if (_isTracking) {
+      print('[CameraService] Already tracking, skipping');
+      return;
+    }
 
     try {
-      // Start camera preview
-      await _cameraController!.startImageStream(_processCameraImage);
+      if (_usingMacOSCamera) {
+        print('[CameraService] Starting macOS tracking...');
+        await _startMacTracking();
+      } else {
+        print('[CameraService] Starting standard camera tracking...');
+        await _cameraController!.startImageStream(_processCameraImage);
+      }
 
-      // Start native tracking
+      print('[CameraService] Calling native startTracking...');
       await _channel.invokeMethod('startTracking');
 
-      // Listen for tracking results
+      print('[CameraService] Setting up tracking event stream...');
       _trackingSubscription = _trackingChannel
           .receiveBroadcastStream()
           .map((data) => _parseTrackingResult(data))
-          .listen(_trackingController.add);
+          .listen((result) {
+        _trackingController.add(result);
+        _latestTrackingResult = result;
+        notifyListeners();
+      });
 
       _isTracking = true;
-      print('Tracking started');
-    } catch (e) {
-      print('Failed to start tracking: $e');
+      print('[CameraService] Tracking started successfully');
+    } catch (e, stack) {
+      print('[CameraService] Failed to start tracking: $e');
+      print(stack);
       rethrow;
     }
   }
 
   Future<void> stopTracking() async {
-    if (!_isTracking) return;
+    print('[CameraService] stopTracking() called');
+    if (!_isTracking) {
+      print('[CameraService] Not tracking, skipping');
+      return;
+    }
 
     try {
       // Stop camera stream
-      await _cameraController!.stopImageStream();
+      if (_usingMacOSCamera) {
+        print('[CameraService] Stopping macOS image stream...');
+        await _stopMacTracking();
+      } else {
+        print('[CameraService] Stopping standard camera stream...');
+        await _cameraController!.stopImageStream();
+      }
 
       // Stop native tracking
+      print('[CameraService] Calling native stopTracking...');
       await _channel.invokeMethod('stopTracking');
 
       // Cancel tracking subscription
+      print('[CameraService] Canceling tracking subscription...');
       await _trackingSubscription?.cancel();
       _trackingSubscription = null;
 
       _isTracking = false;
-      print('Tracking stopped');
-    } catch (e) {
-      print('Failed to stop tracking: $e');
+      _latestTrackingResult = null;
+      notifyListeners();
+      print('[CameraService] Tracking stopped successfully');
+    } catch (e, stack) {
+      print('[CameraService] Failed to stop tracking: $e');
+      print(stack);
       rethrow;
     }
   }
@@ -243,6 +367,112 @@ class CameraService extends ChangeNotifier {
       });
     } catch (e) {
       print('Error processing camera image: $e');
+    }
+  }
+
+  Future<void> _startMacTracking() async {
+    if (_macCameraController == null) {
+      throw StateError('Mac camera controller not attached');
+    }
+    if (_macImageStreamActive) return;
+
+    print('[CameraService] Starting macOS image stream...');
+    await _macCameraController!.startImageStream(
+      _handleMacImageFrame,
+      onError: (error) {
+        print('[CameraService] Mac image stream error: $error');
+      },
+    );
+    _macImageStreamActive = true;
+    print('[CameraService] macOS image stream started successfully');
+  }
+
+  Future<void> _stopMacTracking() async {
+    if (!_macImageStreamActive) return;
+    try {
+      await _macCameraController?.stopImageStream();
+    } finally {
+      _macImageStreamActive = false;
+    }
+  }
+
+  int _macFrameCount = 0;
+  bool _macLoggedFirstFrame = false;
+
+  void _handleMacImageFrame(cam_macos.CameraImageData? data) {
+    if (!_macLoggedFirstFrame) {
+      print('[CameraService] First frame callback received! data is ${data == null ? "null" : "valid"}');
+      if (data != null) {
+        print('[CameraService] Frame size: ${data.width}x${data.height}, bytesPerRow: ${data.bytesPerRow}, bytes: ${data.bytes.length}');
+      }
+      _macLoggedFirstFrame = true;
+    }
+
+    if (!_isTracking) {
+      print('[CameraService] Frame received but tracking is not active');
+      return;
+    }
+
+    if (data == null) {
+      print('[CameraService] Received null frame data');
+      return;
+    }
+
+    try {
+      final rgbBytes = _convertBgraToRgb(data);
+      _channel.invokeMethod('processFrame', {
+        'data': rgbBytes,
+        'width': data.width,
+        'height': data.height,
+        'format': 'bgra8888',
+      });
+
+      _macFrameCount++;
+      if (_macFrameCount % 30 == 0) {
+        print('[CameraService] Processed $_macFrameCount frames');
+      }
+    } catch (e, stack) {
+      print('[CameraService] Error processing mac image: $e');
+      print(stack);
+    }
+  }
+
+  Uint8List _convertBgraToRgb(cam_macos.CameraImageData data) {
+    final width = data.width;
+    final height = data.height;
+    final bytesPerRow = data.bytesPerRow;
+    final source = data.bytes;
+
+    final rgb = Uint8List(width * height * 3);
+    int dstIndex = 0;
+
+    for (int y = 0; y < height; y++) {
+      final rowStart = y * bytesPerRow;
+      for (int x = 0; x < width; x++) {
+        final pixelOffset = rowStart + x * 4;
+        final b = source[pixelOffset];
+        final g = source[pixelOffset + 1];
+        final r = source[pixelOffset + 2];
+        rgb[dstIndex++] = r;
+        rgb[dstIndex++] = g;
+        rgb[dstIndex++] = b;
+      }
+    }
+    return rgb;
+  }
+
+  Future<void> attachMacCameraController(
+    cam_macos.CameraMacOSController controller,
+  ) async {
+    _macCameraController = controller;
+    if (!_isInitialized) {
+      _isInitialized = true;
+      notifyListeners();
+    }
+    if (!_nativeEngineReady) {
+      await _channel.invokeMethod('initializeTrackingEngine');
+      _nativeEngineReady = true;
+      await _applyFaceDetectionBackend();
     }
   }
 
@@ -315,6 +545,21 @@ class CameraService extends ChangeNotifier {
 
   TrackingResult _parseTrackingResult(dynamic data) {
     if (data is Map) {
+      Rect? faceRect;
+      bool faceDetected = false;
+
+      final rectData = data['faceRect'];
+      if (rectData is Map) {
+        faceDetected = rectData['detected'] == true;
+        final double? x = (rectData['x'] as num?)?.toDouble();
+        final double? y = (rectData['y'] as num?)?.toDouble();
+        final double? width = (rectData['width'] as num?)?.toDouble();
+        final double? height = (rectData['height'] as num?)?.toDouble();
+        if (faceDetected && x != null && y != null && width != null && height != null) {
+          faceRect = Rect.fromLTWH(x, y, width, height);
+        }
+      }
+
       return TrackingResult(
         faceDistance: (data['faceDistance'] as num?)?.toDouble() ?? 0.0,
         gazeAngleX: (data['gazeAngleX'] as num?)?.toDouble() ?? 0.0,
@@ -322,6 +567,8 @@ class CameraService extends ChangeNotifier {
         eyesFocused: data['eyesFocused'] ?? false,
         headMoving: data['headMoving'] ?? false,
         shouldersMoving: data['shouldersMoving'] ?? false,
+        faceDetected: faceRect != null || (data['faceDetected'] ?? false),
+        faceRect: faceRect,
       );
     }
     return TrackingResult(
@@ -331,6 +578,8 @@ class CameraService extends ChangeNotifier {
       eyesFocused: false,
       headMoving: false,
       shouldersMoving: false,
+      faceDetected: false,
+      faceRect: null,
     );
   }
 
@@ -362,14 +611,39 @@ class CameraService extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isTracking => _isTracking;
 
+  Future<void> setFaceDetectionBackend(FaceDetectionBackend backend) async {
+    _faceDetectionBackend = backend;
+    await _applyFaceDetectionBackend();
+    notifyListeners();
+  }
+
+  Future<void> _applyFaceDetectionBackend() async {
+    if (!_nativeEngineReady) {
+      return;
+    }
+
+    try {
+      await _channel.invokeMethod('setFaceDetectionBackend', {
+        'backend': _faceDetectionBackend.channelValue,
+      });
+      print('Applied face detector backend: ${_faceDetectionBackend.label}');
+    } catch (e) {
+      print('Failed to apply face detection backend: $e');
+    }
+  }
+
   @override
   Future<void> dispose() async {
     await stopTracking();
     await _trackingSubscription?.cancel();
     await _cameraController?.dispose();
+    try {
+      await _macCameraController?.destroy();
+    } catch (_) {}
     await _trackingController.close();
     _isInitialized = false;
     _isTracking = false;
+    _nativeEngineReady = false;
     super.dispose();
   }
 }
@@ -393,6 +667,8 @@ class MockCameraService extends CameraService {
     // Simulate camera initialization
     await Future.delayed(const Duration(seconds: 1));
     _isInitialized = true;
+    _nativeEngineReady = true;
+    await _applyFaceDetectionBackend();
     print('Mock camera service initialized');
   }
 
@@ -417,9 +693,13 @@ class MockCameraService extends CameraService {
         eyesFocused: DateTime.now().millisecond % 200 < 100,
         headMoving: DateTime.now().millisecond % 500 < 50,
         shouldersMoving: DateTime.now().millisecond % 1000 < 20,
+        faceDetected: true,
+        faceRect: Rect.fromLTWH(0.35, 0.25, 0.3, 0.3),
       );
 
       _trackingController.add(mockResult);
+      _latestTrackingResult = mockResult;
+      notifyListeners();
     });
 
     print('Mock tracking started');

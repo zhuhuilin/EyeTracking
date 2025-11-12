@@ -20,6 +20,7 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
   Offset _gazePosition = Offset.zero;
   Timer? _movementTimer;
   StreamSubscription<TrackingResult>? _trackingSubscription;
+  double? _latestFaceDistanceCm;
   Random _random = Random();
   int _currentTestPhase = 0; // 0: random, 1: horizontal, 2: vertical
   int _correctGazes = 0;
@@ -60,6 +61,7 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
       _currentTestPhase = 0;
       _correctGazes = 0;
       _totalGazes = 0;
+      _latestFaceDistanceCm = null;
     });
 
     // Start listening to tracking results
@@ -194,6 +196,7 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
         screenX.clamp(0.0, size.width),
         screenY.clamp(0.0, size.height),
       );
+      _latestFaceDistanceCm = result.faceDistance;
     });
   }
 
@@ -260,6 +263,13 @@ class _CircleTestWidgetState extends State<CircleTestWidget> {
                   'Gazes: $_correctGazes/$_totalGazes',
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
+                if (_latestFaceDistanceCm != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Face Distance: ${_latestFaceDistanceCm!.toStringAsFixed(1)} cm',
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ],
               ],
             ),
           ),
