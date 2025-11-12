@@ -59,6 +59,10 @@ public:
     void setFaceDetectorBackend(FaceDetectorBackend backend);
     FaceDetectorBackend faceDetectorBackend() const { return active_backend_; }
 
+    // Model variant selection
+    void setYoloModelVariant(const std::string& variant);
+    std::string getYoloModelVariant() const { return yolo_model_variant_; }
+
 private:
     // Face detection and distance calculation
     cv::Rect detectFace(const cv::Mat& frame);
@@ -116,6 +120,7 @@ private:
     float yolo_conf_threshold_;
     float yolo_nms_threshold_;
     int yolo_input_size_;
+    std::string yolo_model_variant_;  // "n", "s", "m", "l", "x" or empty for default
 };
 
 // C interface for Flutter integration
@@ -149,6 +154,7 @@ extern "C" {
                                                 float norm_height);
     void set_camera_parameters(void* engine, double focal_length, double principal_x, double principal_y);
     void set_face_detector_backend(void* engine, int backend);
+    void set_yolo_model_variant(void* engine, const char* variant);
 }
 
 #endif // TRACKING_ENGINE_H

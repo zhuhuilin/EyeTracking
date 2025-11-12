@@ -13,8 +13,8 @@
 #include <mach-o/dyld.h>
 #endif
 
-TrackingEngine::TrackingEngine() 
-    : focal_length_(2000.0), 
+TrackingEngine::TrackingEngine()
+    : focal_length_(2000.0),
       principal_point_(cv::Point2f(0, 0)),
       face_detection_score_threshold_(0.7f),
       calibrated_(false),
@@ -25,12 +25,18 @@ TrackingEngine::TrackingEngine()
       yolo_net_loaded_(false),
       yolo_conf_threshold_(0.45f),
       yolo_nms_threshold_(0.35f),
-      yolo_input_size_(640) {
+      yolo_input_size_(640),
+      yolo_model_variant_("m") {  // Default to medium variant
 
     if (const char* backend_env = std::getenv("EYETRACKING_FACE_BACKEND")) {
         active_backend_ = parseFaceDetectorBackend(backend_env);
         std::cout << "[Tracking] Face detector backend set from environment: "
                   << backendName(active_backend_) << std::endl;
+    }
+
+    // Allow environment variable to override model variant
+    if (const char* variant_env = std::getenv("EYETRACKING_YOLO_VARIANT")) {
+        yolo_model_variant_ = variant_env;
     }
 }
 
@@ -1119,7 +1125,16 @@ extern "C" {
         }
         tracking_engine->setFaceDetectorBackend(mapped);
     }
+
+    void set_yolo_model_variant(void* engine, const char* variant) {
+        TrackingEngine* tracking_engine = static_cast<TrackingEngine*>(engine);
+        if (tracking_engine == nullptr || variant == nullptr) {
+            return;
+        }
+        tracking_engine->setYoloModelVariant(std::string(variant));
+    }
 }
+
 cv::Rect TrackingEngine::detectFaceWithYolo(const cv::Mat& frame) {
     if (!ensureYoloFaceNet() || frame.empty()) {
         return cv::Rect();
@@ -1221,21 +1236,33 @@ std::string TrackingEngine::resolveYoloModelPath() const {
     }
 #endif
 
-    const std::vector<std::string> candidates = {
-        "../Resources/yolov5n-face.onnx",
-        "../../Resources/yolov5n-face.onnx",
-        "Resources/yolov5n-face.onnx",
-        "./yolov5n-face.onnx",
-        "core/models/yolov5n-face.onnx",
-        "../core/models/yolov5n-face.onnx",
-        "../../core/models/yolov5n-face.onnx",
-        "/usr/local/share/eyeball_tracking/models/yolov5n-face.onnx",
-        "/usr/share/eyeball_tracking/models/yolov5n-face.onnx"
+    // Build model filenames with variant support
+    // Try yolo11{variant}.onnx first, then fall back to yolov5n-face.onnx
+    std::vector<std::string> model_names;
+    if (!yolo_model_variant_.empty()) {
+        model_names.push_back("yolo11" + yolo_model_variant_ + ".onnx");
+        model_names.push_back("yolo11" + yolo_model_variant_ + "-face.onnx");
+    }
+    model_names.push_back("yolov5n-face.onnx");  // Legacy fallback
+
+    std::vector<std::string> base_paths = {
+        "../Resources/",
+        "../../Resources/",
+        "Resources/",
+        "./",
+        "core/models/",
+        "../core/models/",
+        "../../core/models/",
+        "/usr/local/share/eyeball_tracking/models/",
+        "/usr/share/eyeball_tracking/models/"
     };
 
-    for (const auto& path : candidates) {
-        if (auto resolved = tryResolve(fs::path(path)); !resolved.empty()) {
-            return resolved;
+    // Try all combinations of model names and base paths
+    for (const auto& model_name : model_names) {
+        for (const auto& base_path : base_paths) {
+            if (auto resolved = tryResolve(fs::path(base_path + model_name)); !resolved.empty()) {
+                return resolved;
+            }
         }
     }
 
@@ -1279,4 +1306,15 @@ void TrackingEngine::setFaceDetectorBackend(FaceDetectorBackend backend) {
     active_backend_ = backend;
     std::cout << "[Tracking] Face detector backend switched to "
               << backendName(active_backend_) << std::endl;
+}
+
+void TrackingEngine::setYoloModelVariant(const std::string& variant) {
+    if (yolo_model_variant_ != variant) {
+        yolo_model_variant_ = variant;
+        // Reset YOLO loading state to force reload with new variant
+        yolo_load_attempted_ = false;
+        yolo_net_loaded_ = false;
+        yolo_face_net_ = cv::dnn::Net();  // Clear the network
+        std::cout << "[Tracking] YOLO model variant set to: " << variant << std::endl;
+    }
 }
