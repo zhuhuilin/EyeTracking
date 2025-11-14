@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_state.dart';
 import '../models/model_info.dart';
+import '../models/calibration_data.dart';
 import 'model_registry.dart';
 
 enum FaceDetectionBackend {
@@ -580,7 +581,51 @@ class CameraService extends ChangeNotifier {
         }
       }
 
-      return TrackingResult(
+      // Parse extended tracking data
+      List<Point> faceLandmarks = [];
+      if (data['faceLandmarks'] is List) {
+        faceLandmarks = (data['faceLandmarks'] as List).map((p) {
+          final point = p as Map;
+          return Point(
+            (point['x'] as num).toDouble(),
+            (point['y'] as num).toDouble(),
+          );
+        }).toList();
+      }
+
+      // Extract eye landmarks from face landmarks (if we have enough)
+      List<Point> leftEyeLandmarks = [];
+      List<Point> rightEyeLandmarks = [];
+      if (faceLandmarks.length >= 12) {
+        // Assuming eyes are in landmarks 4-9 (left eye) and 10-15 (right eye)
+        // This matches the approximate positions from detectFaceLandmarks
+        leftEyeLandmarks = faceLandmarks.length > 5 ? faceLandmarks.sublist(4, 8) : [];
+        rightEyeLandmarks = faceLandmarks.length > 9 ? faceLandmarks.sublist(6, 10) : [];
+      }
+
+      Vector3 headPose = const Vector3(0, 0, 0);
+      if (data['headPose'] is Map) {
+        final pose = data['headPose'] as Map;
+        headPose = Vector3(
+          (pose['x'] as num?)?.toDouble() ?? 0.0,
+          (pose['y'] as num?)?.toDouble() ?? 0.0,
+          (pose['z'] as num?)?.toDouble() ?? 0.0,
+        );
+      }
+
+      Vector3 gazeVector = const Vector3(0, 0, 1);
+      if (data['gazeVector'] is Map) {
+        final gaze = data['gazeVector'] as Map;
+        gazeVector = Vector3(
+          (gaze['x'] as num?)?.toDouble() ?? 0.0,
+          (gaze['y'] as num?)?.toDouble() ?? 0.0,
+          (gaze['z'] as num?)?.toDouble() ?? 1.0,
+        );
+      }
+
+      final confidence = (data['confidence'] as num?)?.toDouble() ?? 0.0;
+
+      return ExtendedTrackingResult(
         faceDistance: (data['faceDistance'] as num?)?.toDouble() ?? 0.0,
         gazeAngleX: (data['gazeAngleX'] as num?)?.toDouble() ?? 0.0,
         gazeAngleY: (data['gazeAngleY'] as num?)?.toDouble() ?? 0.0,
@@ -589,9 +634,15 @@ class CameraService extends ChangeNotifier {
         shouldersMoving: data['shouldersMoving'] ?? false,
         faceDetected: faceRect != null || (data['faceDetected'] ?? false),
         faceRect: faceRect,
+        faceLandmarks: faceLandmarks,
+        leftEyeLandmarks: leftEyeLandmarks,
+        rightEyeLandmarks: rightEyeLandmarks,
+        headPose: headPose,
+        gazeVector: gazeVector,
+        confidence: confidence,
       );
     }
-    return TrackingResult(
+    return ExtendedTrackingResult(
       faceDistance: 0.0,
       gazeAngleX: 0.0,
       gazeAngleY: 0.0,

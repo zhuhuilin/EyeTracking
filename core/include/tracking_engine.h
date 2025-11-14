@@ -28,6 +28,23 @@ struct TrackingResult {
     double face_rect_y;
     double face_rect_width;
     double face_rect_height;
+
+    // Extended tracking data for calibration
+    // Face landmarks (68 points, dlib-style)
+    std::vector<cv::Point2f> face_landmarks;
+
+    // Head pose in degrees (pitch, yaw, roll)
+    double head_pose_pitch;
+    double head_pose_yaw;
+    double head_pose_roll;
+
+    // Gaze vector (normalized direction)
+    double gaze_vector_x;
+    double gaze_vector_y;
+    double gaze_vector_z;
+
+    // Detection confidence (0.0 to 1.0)
+    double confidence;
 };
 
 class TrackingEngine {
@@ -137,6 +154,24 @@ extern "C" {
         double face_rect_y;
         double face_rect_width;
         double face_rect_height;
+
+        // Extended tracking data
+        // Face landmarks (68 points × 2 coordinates)
+        float* face_landmarks;      // Array of x,y pairs
+        int face_landmarks_count;   // Number of points (should be 68)
+
+        // Head pose (pitch, yaw, roll in degrees)
+        double head_pose_pitch;
+        double head_pose_yaw;
+        double head_pose_roll;
+
+        // Gaze vector (normalized)
+        double gaze_vector_x;
+        double gaze_vector_y;
+        double gaze_vector_z;
+
+        // Detection confidence
+        double confidence;
     };
 
     void* create_tracking_engine();

@@ -20,6 +20,24 @@ typedef struct {
     double face_rect_y;
     double face_rect_width;
     double face_rect_height;
+
+    // Extended tracking data
+    // Face landmarks (68 points × 2 coordinates)
+    float* face_landmarks;      // Array of x,y pairs
+    int face_landmarks_count;   // Number of points (should be 68)
+
+    // Head pose (pitch, yaw, roll in degrees)
+    double head_pose_pitch;
+    double head_pose_yaw;
+    double head_pose_roll;
+
+    // Gaze vector (normalized)
+    double gaze_vector_x;
+    double gaze_vector_y;
+    double gaze_vector_z;
+
+    // Detection confidence
+    double confidence;
 } CTrackingResult;
 
 typedef enum {

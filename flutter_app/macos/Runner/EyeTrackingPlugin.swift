@@ -323,6 +323,17 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
     }
 
     private func buildTrackingResultDictionary(from result: CTrackingResult) -> [String: Any] {
+        // Convert face landmarks from C array to Swift array
+        var faceLandmarksArray: [[String: Double]] = []
+        if result.face_landmarks != nil && result.face_landmarks_count > 0 {
+            let landmarksPointer = result.face_landmarks!
+            for i in 0..<Int(result.face_landmarks_count) {
+                let x = Double(landmarksPointer[i * 2])
+                let y = Double(landmarksPointer[i * 2 + 1])
+                faceLandmarksArray.append(["x": x, "y": y])
+            }
+        }
+
         return [
             "faceDistance": result.face_distance,
             "gazeAngleX": result.gaze_angle_x,
@@ -337,7 +348,20 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
                 "y": result.face_rect_y,
                 "width": result.face_rect_width,
                 "height": result.face_rect_height
-            ]
+            ],
+            // Extended tracking data
+            "faceLandmarks": faceLandmarksArray,
+            "headPose": [
+                "x": result.head_pose_pitch,
+                "y": result.head_pose_yaw,
+                "z": result.head_pose_roll
+            ],
+            "gazeVector": [
+                "x": result.gaze_vector_x,
+                "y": result.gaze_vector_y,
+                "z": result.gaze_vector_z
+            ],
+            "confidence": result.confidence
         ]
     }
 

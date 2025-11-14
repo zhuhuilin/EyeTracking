@@ -81,6 +81,15 @@ TrackingResult TrackingEngine::processFrame(const cv::Mat& frame, std::optional<
     result.face_rect_width = 0.0;
     result.face_rect_height = 0.0;
 
+    // Initialize extended tracking data
+    result.head_pose_pitch = 0.0;
+    result.head_pose_yaw = 0.0;
+    result.head_pose_roll = 0.0;
+    result.gaze_vector_x = 0.0;
+    result.gaze_vector_y = 0.0;
+    result.gaze_vector_z = 1.0; // Default: looking straight ahead
+    result.confidence = 0.0;
+
     if (frame.empty()) {
         std::cerr << "[Tracking] Empty frame received!" << std::endl;
         return result;
@@ -132,12 +141,34 @@ TrackingResult TrackingEngine::processFrame(const cv::Mat& frame, std::optional<
             result.eyes_focused = std::abs(gaze.x) < 0.1 && std::abs(gaze.y) < 0.1;
         }
         
-        // Head pose estimation
+        // Head pose estimation and landmark detection
         std::vector<cv::Point2f> face_points = detectFaceLandmarks(gray, face_roi);
         if (face_points.size() > 0) {
+            // Store face landmarks in result
+            result.face_landmarks = face_points;
+
+            // Estimate head pose
             cv::Vec3f head_pose = estimateHeadPose(face_points);
+            result.head_pose_pitch = head_pose[0];
+            result.head_pose_yaw = head_pose[1];
+            result.head_pose_roll = head_pose[2];
+
             result.head_moving = detectHeadMovement(head_pose, previous_head_pose_);
             previous_head_pose_ = head_pose;
+
+            // Calculate gaze vector from head pose
+            // Convert head pose angles to a normalized gaze direction vector
+            double pitch_rad = head_pose[0] * CV_PI / 180.0;
+            double yaw_rad = head_pose[1] * CV_PI / 180.0;
+
+            result.gaze_vector_x = std::sin(yaw_rad) * std::cos(pitch_rad);
+            result.gaze_vector_y = -std::sin(pitch_rad); // Negative because screen Y is down
+            result.gaze_vector_z = std::cos(yaw_rad) * std::cos(pitch_rad);
+
+            // Set confidence based on face detection quality
+            // Higher confidence if face is well-centered and of good size
+            double size_score = std::min(1.0, face_roi.area() / (frame.cols * frame.rows * 0.15));
+            result.confidence = size_score * 0.9; // Conservative confidence
         }
         
         // Shoulder detection
@@ -1092,6 +1123,33 @@ extern "C" {
         c_result.face_rect_y = result.face_rect_y;
         c_result.face_rect_width = result.face_rect_width;
         c_result.face_rect_height = result.face_rect_height;
+
+        // Extended tracking data
+        c_result.head_pose_pitch = result.head_pose_pitch;
+        c_result.head_pose_yaw = result.head_pose_yaw;
+        c_result.head_pose_roll = result.head_pose_roll;
+        c_result.gaze_vector_x = result.gaze_vector_x;
+        c_result.gaze_vector_y = result.gaze_vector_y;
+        c_result.gaze_vector_z = result.gaze_vector_z;
+        c_result.confidence = result.confidence;
+
+        // Convert face landmarks to C array
+        // Use static buffer to avoid dynamic allocation/deallocation issues
+        static std::vector<float> landmarks_buffer;
+        landmarks_buffer.clear();
+
+        for (const auto& point : result.face_landmarks) {
+            landmarks_buffer.push_back(point.x);
+            landmarks_buffer.push_back(point.y);
+        }
+
+        if (!landmarks_buffer.empty()) {
+            c_result.face_landmarks = landmarks_buffer.data();
+            c_result.face_landmarks_count = static_cast<int>(result.face_landmarks.size());
+        } else {
+            c_result.face_landmarks = nullptr;
+            c_result.face_landmarks_count = 0;
+        }
 
         return c_result;
     }
