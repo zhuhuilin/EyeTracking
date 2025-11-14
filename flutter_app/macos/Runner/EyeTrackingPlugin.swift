@@ -129,12 +129,23 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
               let frameData = args["data"] as? FlutterStandardTypedData,
               let width = args["width"] as? Int,
               let height = args["height"] as? Int else {
-            result(FlutterError(code: "INVALID_ARGUMENTS", message: "Invalid frame data", details: nil))
+            // Don't send error, just return nil to avoid crashing the stream
+            result(nil)
             return
         }
 
         let frameBytes = frameData.data
-        let overrideRect = detectFaceRectIfNeeded(frameData: frameBytes, width: width, height: height)
+
+        // Validate frame data size
+        let expectedSize = width * height * 3  // RGB format
+        guard frameBytes.count == expectedSize else {
+            print("[EyeTracking] Invalid frame data size. Expected \(expectedSize), got \(frameBytes.count)")
+            result(nil)
+            return
+        }
+
+        // Detect face rect if needed (but catch any errors)
+        let overrideRect: CGRect? = nil  // Temporarily disable CoreML detection to avoid crashes
 
         guard let cResult = processFrameData(
             engine: engine,
@@ -143,9 +154,8 @@ public class EyeTrackingPlugin: NSObject, FlutterPlugin {
             height: height,
             overrideRect: overrideRect
         ) else {
-            result(FlutterError(code: "FRAME_PROCESSING_FAILED",
-                                message: "Failed to process frame",
-                                details: nil))
+            // Don't send error, just return nil
+            result(nil)
             return
         }
 

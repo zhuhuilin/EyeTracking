@@ -413,6 +413,7 @@ class CameraService extends ChangeNotifier {
 
   int _macFrameCount = 0;
   bool _macLoggedFirstFrame = false;
+  bool _isProcessingFrame = false;
 
   void _handleMacImageFrame(cam_macos.CameraImageData? data) {
     if (!_macLoggedFirstFrame) {
@@ -435,13 +436,22 @@ class CameraService extends ChangeNotifier {
       return;
     }
 
+    // Skip processing if we're already processing a frame
+    if (_isProcessingFrame) {
+      return;
+    }
+
+    _isProcessingFrame = true;
+
     try {
       final rgbBytes = _convertBgraToRgb(data);
       _channel.invokeMethod('processFrame', {
         'data': rgbBytes,
         'width': data.width,
         'height': data.height,
-        'format': 'bgra8888',
+        'format': 'rgb',  // Changed from 'bgra8888' to 'rgb' since we're converting
+      }).whenComplete(() {
+        _isProcessingFrame = false;
       });
 
       _macFrameCount++;
@@ -451,6 +461,7 @@ class CameraService extends ChangeNotifier {
     } catch (e, stack) {
       print('[CameraService] Error processing mac image: $e');
       print(stack);
+      _isProcessingFrame = false;
     }
   }
 

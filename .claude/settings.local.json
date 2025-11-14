@@ -23,7 +23,10 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(./scripts/build-macos.sh:*)",
+      "Bash(cp:*)",
+      "Bash(flutter run:*)"
     ],
     "deny": [],
     "ask": []
