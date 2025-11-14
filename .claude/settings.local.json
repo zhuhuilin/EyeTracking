@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git config:*)",
+      "Bash(./build.sh:*)",
+      "Bash(winget:*)",
+      "Bash(vcpkg --version:*)",
+      "Bash(choco --version:*)",
+      "Bash(choco install:*)",
+      "Bash(./bootstrap-vcpkg.bat)",
+      "Bash(/c/vcpkg/vcpkg install:*)",
+      "Bash(ls:*)",
+      "Bash(\"/c/Program Files (x86)/Microsoft Visual Studio/Installer/vs_installer.exe\" modify --installPath \"C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\" --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --add Microsoft.VisualStudio.Component.VC.ATL.ARM64 --quiet --norestart)",
+      "Bash(flutter pub get:*)",
+      "Bash(where:*)",
+      "Bash(git clone:*)",
+      "Bash(/c/flutter/bin/flutter doctor:*)",
+      "Bash(/c/flutter/bin/flutter pub:*)",
+      "Bash(cmake:*)",
+      "Bash(\"/c/Program Files/CMake/bin/cmake.exe\":*)",
+      "Bash(\"/c/Program Files/CMake/bin/cmake.exe\" --build . --config Release)",
+      "Bash(chmod:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

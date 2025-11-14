@@ -11,6 +11,8 @@ flutter_app/.dart_tool/
 flutter_app/.packages
 flutter_app/.pub-cache/
 flutter_app/build/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
 flutter_app/ios/.symlinks/
 flutter_app/ios/Flutter/Flutter.framework/
 flutter_app/ios/Flutter/Flutter.podspec
@@ -55,6 +57,7 @@ flutter_app/linux/runner/flutter_window.h
 # C++ Core
 core/build/
 core/install/
+core/dependencies/
 *.o
 *.dylib
 *.so
