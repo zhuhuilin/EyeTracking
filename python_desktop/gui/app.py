@@ -81,20 +81,20 @@ class EyeTrackingApp:
         start_button = ft.ElevatedButton(
             "Start Tracking",
             on_click=self._on_start_tracking,
-            icon=ft.icons.PLAY_ARROW,
+            icon=ft.Icons.PLAY_ARROW,
         )
 
         stop_button = ft.ElevatedButton(
             "Stop Tracking",
             on_click=self._on_stop_tracking,
-            icon=ft.icons.STOP,
+            icon=ft.Icons.STOP,
             disabled=True,
         )
 
         calibrate_button = ft.ElevatedButton(
             "Calibrate",
             on_click=self._on_calibrate,
-            icon=ft.icons.TUNE,
+            icon=ft.Icons.TUNE,
         )
 
         # Button row
@@ -127,7 +127,7 @@ class EyeTrackingApp:
                     controls=[
                         ft.Container(
                             content=self.video_feed,
-                            border=ft.border.all(2, ft.colors.BLUE_400),
+                            border=ft.border.all(2, ft.Colors.BLUE_400),
                             border_radius=10,
                         ),
                         ft.Container(
@@ -223,7 +223,7 @@ class EyeTrackingApp:
             ft.Text(f"Gaze Y: {result.gaze_angle_y:.1f}°"),
             ft.Text(
                 f"Eyes Focused: {'Yes' if result.eyes_focused else 'No'}",
-                color=ft.colors.GREEN if result.eyes_focused else ft.colors.RED,
+                color=ft.Colors.GREEN if result.eyes_focused else ft.Colors.RED,
             ),
             ft.Text(f"Head Moving: {'Yes' if result.head_moving else 'No'}"),
         ]

@@ -38,7 +38,10 @@
       "Bash(cmd //c \"C:\\Users\\huilinzhu\\Projects\\EyeTracking\\core\\scripts\\build-windows-arm64.bat\")",
       "Bash(\"/c/Program Files/CMake/bin/cmake.exe\" --build . --config Release --target install --parallel 4)",
       "Bash(git fetch:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(python -m venv:*)",
+      "Bash(venv/Scripts/pip install:*)",
+      "Bash(venv/Scripts/python:*)"
     ],
     "deny": [],
     "ask": []
