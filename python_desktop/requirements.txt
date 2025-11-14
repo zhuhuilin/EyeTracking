@@ -5,7 +5,5 @@ numpy>=1.24.0
 # GUI Framework
 PyQt6>=6.6.0  # Mature desktop UI framework
 
-# Optional (not needed for basic prototype):
-# mediapipe>=0.10.0  # Advanced face/pose tracking (requires Python < 3.14)
-# ultralytics>=8.0.0  # YOLO models
-# onnxruntime>=1.16.0  # ONNX Runtime support
+# Note: mediapipe not available for Windows ARM64
+# Using OpenCV's DNN module and Haar Cascades instead
