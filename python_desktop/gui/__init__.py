@@ -1,6 +1,6 @@
 """
-GUI module using Flet framework.
+GUI module using PyQt6 framework.
 """
-from .app import EyeTrackingApp
+from .app import create_app
 
-__all__ = ["EyeTrackingApp"]
+__all__ = ["create_app"]
