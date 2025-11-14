@@ -20,24 +20,31 @@ TrackingEngine::TrackingEngine()
       calibrated_(false),
       face_detector_load_attempted_(false),
       cascade_load_attempted_(false),
-      active_backend_(FaceDetectorBackend::Auto),
-      yolo_load_attempted_(false),
+      active_backend_(FaceDetectorBackend::Auto)
+#if EYETRACKING_HAS_DNN
+      ,yolo_load_attempted_(false),
       yolo_net_loaded_(false),
       yolo_conf_threshold_(0.45f),
       yolo_nms_threshold_(0.35f),
       yolo_input_size_(640),
-      yolo_model_variant_("m") {  // Default to medium variant
-
+      yolo_model_variant_("m")  // Default to medium variant
+#endif
+#if EYETRACKING_HAS_ONNXRUNTIME
+      ,yolo_session_loaded_(false)
+#endif
+{
     if (const char* backend_env = std::getenv("EYETRACKING_FACE_BACKEND")) {
         active_backend_ = parseFaceDetectorBackend(backend_env);
         std::cout << "[Tracking] Face detector backend set from environment: "
                   << backendName(active_backend_) << std::endl;
     }
 
+#if EYETRACKING_HAS_DNN
     // Allow environment variable to override model variant
     if (const char* variant_env = std::getenv("EYETRACKING_YOLO_VARIANT")) {
         yolo_model_variant_ = variant_env;
     }
+#endif
 }
 
 TrackingEngine::~TrackingEngine() {
@@ -473,6 +480,7 @@ bool TrackingEngine::ensureCascadeClassifier() {
 }
 
 bool TrackingEngine::ensureYoloFaceNet() {
+#if EYETRACKING_HAS_DNN
     if (yolo_net_loaded_) {
         return true;
     }
@@ -516,6 +524,50 @@ bool TrackingEngine::ensureYoloFaceNet() {
     }
 
     return yolo_net_loaded_;
+#else
+    return false;
+#endif
+}
+
+bool TrackingEngine::ensureYoloSession() {
+#if EYETRACKING_HAS_ONNXRUNTIME
+    if (yolo_session_loaded_) {
+        return true;
+    }
+
+    try {
+        std::string model_path = resolveYoloModelPath();
+        if (model_path.empty()) {
+            std::cout << "[Tracking] YOLO face model not found (optional). "
+                      << "Place yolov5n-face.onnx in core/models/ to enable YOLO detection." << std::endl;
+            return false;
+        }
+
+        std::cout << "[Tracking] Loading YOLO face detector (ONNX Runtime) from: " << model_path << std::endl;
+
+        // Initialize ONNX Runtime environment
+        ort_env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "EyeTracking");
+
+        // Create session options
+        Ort::SessionOptions session_options;
+        session_options.SetIntraOpNumThreads(1);
+        session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+
+        // Try to convert string to wstring for Windows
+        std::wstring wide_path(model_path.begin(), model_path.end());
+        yolo_session_ = std::make_unique<Ort::Session>(*ort_env_, wide_path.c_str(), session_options);
+
+        yolo_session_loaded_ = true;
+        std::cout << "[Tracking] YOLO face detector loaded successfully (ONNX Runtime)" << std::endl;
+        return true;
+    } catch (const Ort::Exception& e) {
+        std::cerr << "[Tracking] ONNX Runtime error: " << e.what() << std::endl;
+        std::cerr << "[Tracking] Will fall back to YuNet or Haar Cascade detection." << std::endl;
+        return false;
+    }
+#else
+    return false;
+#endif
 }
 
 std::string TrackingEngine::resolveFaceModelPath() const {
@@ -1194,6 +1246,7 @@ extern "C" {
 }
 
 cv::Rect TrackingEngine::detectFaceWithYolo(const cv::Mat& frame) {
+#if EYETRACKING_HAS_DNN
     if (!ensureYoloFaceNet() || frame.empty()) {
         return cv::Rect();
     }
@@ -1265,6 +1318,140 @@ cv::Rect TrackingEngine::detectFaceWithYolo(const cv::Mat& frame) {
 
     // Expand the rectangle to include full forehead and chin
     return expandFaceRect(best_box, frame.size());
+#elif EYETRACKING_HAS_ONNXRUNTIME
+    if (!ensureYoloSession() || frame.empty()) {
+        return cv::Rect();
+    }
+
+    try {
+        // Preprocess frame for YOLO (640x640 input size)
+        cv::Mat input;
+        if (frame.channels() == 1) {
+            cv::cvtColor(frame, input, cv::COLOR_GRAY2BGR);
+        } else if (frame.channels() == 4) {
+            cv::cvtColor(frame, input, cv::COLOR_BGRA2BGR);
+        } else {
+            input = frame;
+        }
+
+        cv::Mat resized;
+        cv::resize(input, resized, cv::Size(640, 640));
+
+        // Convert to float and normalize [0, 1]
+        cv::Mat float_img;
+        resized.convertTo(float_img, CV_32FC3, 1.0f / 255.0f);
+
+        // Convert from HWC to CHW format (ONNX Runtime expects CHW)
+        std::vector<cv::Mat> channels(3);
+        cv::split(float_img, channels);
+
+        std::vector<float> input_tensor_values;
+        input_tensor_values.reserve(3 * 640 * 640);
+        for (int c = 0; c < 3; ++c) {
+            input_tensor_values.insert(input_tensor_values.end(),
+                                      (float*)channels[c].data,
+                                      (float*)channels[c].data + 640 * 640);
+        }
+
+        // Create input tensor
+        auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        std::vector<int64_t> input_shape = {1, 3, 640, 640};
+        Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
+            memory_info,
+            input_tensor_values.data(),
+            input_tensor_values.size(),
+            input_shape.data(),
+            input_shape.size()
+        );
+
+        // Run inference
+        const char* input_names[] = {"images"};
+        const char* output_names[] = {"output0"};
+        auto output_tensors = yolo_session_->Run(
+            Ort::RunOptions{nullptr},
+            input_names, &input_tensor, 1,
+            output_names, 1
+        );
+
+        // Post-process YOLO output
+        float* output_data = output_tensors[0].GetTensorMutableData<float>();
+        auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
+
+        if (output_shape.size() < 3) {
+            return cv::Rect();
+        }
+
+        const int rows = output_shape[1];
+        const int dimensions = output_shape[2];
+
+        std::vector<cv::Rect> boxes;
+        std::vector<float> confidences;
+
+        for (int i = 0; i < rows; ++i) {
+            const float* row = output_data + i * dimensions;
+            float objectness = row[4];
+            float class_score = dimensions > 5 ? row[5] : 1.0f;
+            float confidence = objectness * class_score;
+
+            if (confidence < 0.45f) {  // yolo_conf_threshold_
+                continue;
+            }
+
+            float center_x = row[0];
+            float center_y = row[1];
+            float width = row[2];
+            float height = row[3];
+
+            float x = (center_x - width / 2.0f) / 640.0f * frame.cols;
+            float y = (center_y - height / 2.0f) / 640.0f * frame.rows;
+            float w = width / 640.0f * frame.cols;
+            float h = height / 640.0f * frame.rows;
+
+            boxes.emplace_back(
+                static_cast<int>(std::round(x)),
+                static_cast<int>(std::round(y)),
+                static_cast<int>(std::round(w)),
+                static_cast<int>(std::round(h))
+            );
+            confidences.push_back(confidence);
+        }
+
+        // Simple NMS (no OpenCV DNN available)
+        std::vector<int> indices;
+        for (size_t i = 0; i < boxes.size(); ++i) {
+            bool keep = true;
+            for (size_t j = 0; j < i; ++j) {
+                if (indices.size() > j && confidences[indices[j]] > confidences[i]) {
+                    cv::Rect intersection = boxes[i] & boxes[indices[j]];
+                    float iou = static_cast<float>(intersection.area()) /
+                               static_cast<float>((boxes[i] | boxes[indices[j]]).area());
+                    if (iou > 0.35f) {  // yolo_nms_threshold_
+                        keep = false;
+                        break;
+                    }
+                }
+            }
+            if (keep) {
+                indices.push_back(i);
+            }
+        }
+
+        if (indices.empty()) {
+            return cv::Rect();
+        }
+
+        cv::Rect best_box = clampRectToFrame(boxes[indices[0]], frame.size());
+
+        // Expand the rectangle to include full forehead and chin
+        return expandFaceRect(best_box, frame.size());
+    } catch (const Ort::Exception& e) {
+        std::cerr << "[Tracking] ONNX Runtime inference error: " << e.what() << std::endl;
+        return cv::Rect();
+    }
+#else
+    (void)frame;
+    return cv::Rect();
+#endif
 }
 
 std::string TrackingEngine::resolveYoloModelPath() const {
@@ -1367,6 +1554,7 @@ void TrackingEngine::setFaceDetectorBackend(FaceDetectorBackend backend) {
 }
 
 void TrackingEngine::setYoloModelVariant(const std::string& variant) {
+#if EYETRACKING_HAS_DNN
     if (yolo_model_variant_ != variant) {
         yolo_model_variant_ = variant;
         // Reset YOLO loading state to force reload with new variant
@@ -1375,4 +1563,11 @@ void TrackingEngine::setYoloModelVariant(const std::string& variant) {
         yolo_face_net_ = cv::dnn::Net();  // Clear the network
         std::cout << "[Tracking] YOLO model variant set to: " << variant << std::endl;
     }
+#elif EYETRACKING_HAS_ONNXRUNTIME
+    // ONNX Runtime doesn't support variant selection yet
+    std::cout << "[Tracking] YOLO model variant setting not yet supported with ONNX Runtime" << std::endl;
+    (void)variant;
+#else
+    (void)variant;
+#endif
 }

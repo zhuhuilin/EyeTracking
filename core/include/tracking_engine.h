@@ -3,10 +3,19 @@
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/version.hpp>
-#include <opencv2/dnn.hpp>
 #include <vector>
 #include <string>
 #include <optional>
+
+// Check if DNN module is available
+#ifndef EYETRACKING_HAS_DNN
+#ifdef HAVE_OPENCV_DNN
+#define EYETRACKING_HAS_DNN 1
+#include <opencv2/dnn.hpp>
+#else
+#define EYETRACKING_HAS_DNN 0
+#endif
+#endif
 
 #ifndef EYETRACKING_HAS_YUNET
 #if (CV_VERSION_MAJOR > 4) || (CV_VERSION_MAJOR == 4 && CV_VERSION_MINOR >= 6)
@@ -14,6 +23,15 @@
 #else
 #define EYETRACKING_HAS_YUNET 0
 #endif
+#endif
+
+#ifndef EYETRACKING_HAS_ONNXRUNTIME
+#define EYETRACKING_HAS_ONNXRUNTIME 0
+#endif
+
+#if EYETRACKING_HAS_ONNXRUNTIME
+#include <onnxruntime_cxx_api.h>
+#include <memory>
 #endif
 
 struct TrackingResult {
@@ -104,6 +122,7 @@ private:
     bool ensureFaceDetector();
     bool ensureCascadeClassifier();
     bool ensureYoloFaceNet();
+    bool ensureYoloSession();
     std::string resolveFaceModelPath() const;
     std::string resolveYoloModelPath() const;
     static cv::Rect clampRectToFrame(const cv::Rect& rect, const cv::Size& size);
@@ -131,6 +150,7 @@ private:
     bool face_detector_load_attempted_;
     bool cascade_load_attempted_;
     FaceDetectorBackend active_backend_;
+#if EYETRACKING_HAS_DNN
     cv::dnn::Net yolo_face_net_;
     bool yolo_load_attempted_;
     bool yolo_net_loaded_;
@@ -138,6 +158,12 @@ private:
     float yolo_nms_threshold_;
     int yolo_input_size_;
     std::string yolo_model_variant_;  // "n", "s", "m", "l", "x" or empty for default
+#endif
+#if EYETRACKING_HAS_ONNXRUNTIME
+    std::unique_ptr<Ort::Env> ort_env_;
+    std::unique_ptr<Ort::Session> yolo_session_;
+    bool yolo_session_loaded_;
+#endif
 };
 
 // C interface for Flutter integration
