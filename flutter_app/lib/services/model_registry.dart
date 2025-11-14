@@ -1,15 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/model_info.dart';
 
 enum PerformanceTarget {
-  maxSpeed,      // Prioritize speed over accuracy
-  balanced,      // Balance between speed and accuracy
-  maxAccuracy,   // Prioritize accuracy over speed
+  maxSpeed, // Prioritize speed over accuracy
+  balanced, // Balance between speed and accuracy
+  maxAccuracy, // Prioritize accuracy over speed
 }
 
 class ModelRegistry {
@@ -40,7 +39,8 @@ class ModelRegistry {
   /// Load models from assets/models.json
   Future<void> _loadModelsFromAsset() async {
     try {
-      final String jsonString = await rootBundle.loadString('assets/models.json');
+      final String jsonString =
+          await rootBundle.loadString('assets/models.json');
       final Map<String, dynamic> data = json.decode(jsonString);
 
       // Parse models
@@ -49,14 +49,14 @@ class ModelRegistry {
 
       // Parse default models
       final Map<String, dynamic> defaults = data['defaultModels'] ?? {};
-      _defaultModels = defaults.map((key, value) => MapEntry(key, value.toString()));
+      _defaultModels =
+          defaults.map((key, value) => MapEntry(key, value.toString()));
 
       // Parse download URLs
       final Map<String, dynamic> downloadConfig = data['downloadUrls'] ?? {};
       _baseDownloadUrl = downloadConfig['baseUrl'] ?? '';
       final Map<String, dynamic> urls = downloadConfig['models'] ?? {};
       _downloadUrls = urls.map((key, value) => MapEntry(key, value.toString()));
-
     } catch (e) {
       print('Error loading models.json: $e');
       _models = [];
@@ -110,9 +110,10 @@ class ModelRegistry {
   /// Get models for current platform
   List<ModelInfo> getModelsForPlatform([SupportedPlatform? platform]) {
     platform ??= _getCurrentPlatform();
-    return _models.where((m) =>
-      m.platform == SupportedPlatform.all || m.platform == platform
-    ).toList();
+    return _models
+        .where((m) =>
+            m.platform == SupportedPlatform.all || m.platform == platform)
+        .toList();
   }
 
   /// Get available models (bundled or downloaded) for platform
@@ -121,12 +122,14 @@ class ModelRegistry {
   }
 
   /// Get models by type
-  List<ModelInfo> getModelsByType(ModelType type, [SupportedPlatform? platform]) {
+  List<ModelInfo> getModelsByType(ModelType type,
+      [SupportedPlatform? platform]) {
     return getModelsForPlatform(platform).where((m) => m.type == type).toList();
   }
 
   /// Get best model for given criteria
-  ModelInfo? getBestModel(PerformanceTarget target, [SupportedPlatform? platform]) {
+  ModelInfo? getBestModel(PerformanceTarget target,
+      [SupportedPlatform? platform]) {
     final available = getAvailableModels(platform);
     if (available.isEmpty) return null;
 
@@ -172,22 +175,25 @@ class ModelRegistry {
     if (_database == null) return false;
 
     try {
-      await _database!.insert('models', {
-        'id': model.id,
-        'name': model.name,
-        'displayName': model.displayName,
-        'type': model.type.name,
-        'variant': model.variant.name,
-        'format': model.format.name,
-        'platform': model.platform.name,
-        'filePath': model.filePath,
-        'sizeMB': model.sizeMB,
-        'downloaded': model.downloaded ? 1 : 0,
-        'addedByAdminId': model.addedByAdminId,
-        'metadata': json.encode(model.metadata),
-        'accuracyRating': model.accuracyRating,
-        'speedRating': model.speedRating,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await _database!.insert(
+          'models',
+          {
+            'id': model.id,
+            'name': model.name,
+            'displayName': model.displayName,
+            'type': model.type.name,
+            'variant': model.variant.name,
+            'format': model.format.name,
+            'platform': model.platform.name,
+            'filePath': model.filePath,
+            'sizeMB': model.sizeMB,
+            'downloaded': model.downloaded ? 1 : 0,
+            'addedByAdminId': model.addedByAdminId,
+            'metadata': json.encode(model.metadata),
+            'accuracyRating': model.accuracyRating,
+            'speedRating': model.speedRating,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
 
       // Add to in-memory list
       final existingIndex = _models.indexWhere((m) => m.id == model.id);
@@ -299,7 +305,8 @@ class ModelRegistry {
       'availableModels': available,
       'customModels': custom,
       'bundledModels': _models.where((m) => m.bundled).length,
-      'downloadedModels': _models.where((m) => m.downloaded && !m.bundled).length,
+      'downloadedModels':
+          _models.where((m) => m.downloaded && !m.bundled).length,
     };
   }
 }

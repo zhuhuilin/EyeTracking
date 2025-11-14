@@ -4,7 +4,7 @@ import 'package:eyeball_tracking/models/model_info.dart';
 void main() {
   group('ModelInfo', () {
     test('creates instance with all required fields', () {
-      final model = ModelInfo(
+      const model = ModelInfo(
         id: 'test_model',
         name: 'test',
         displayName: 'Test Model',
@@ -36,7 +36,7 @@ void main() {
     });
 
     test('toJson and fromJson work correctly', () {
-      final original = ModelInfo(
+      const original = ModelInfo(
         id: 'yolo11m',
         name: 'yolo11m',
         displayName: 'YOLO11 Medium',
@@ -75,7 +75,7 @@ void main() {
     });
 
     test('copyWith creates new instance with updated fields', () {
-      final original = ModelInfo(
+      const original = ModelInfo(
         id: 'test',
         name: 'test',
         displayName: 'Test',
@@ -100,7 +100,7 @@ void main() {
     });
 
     test('performanceDescription returns correct descriptions', () {
-      final excellentModel = ModelInfo(
+      const excellentModel = ModelInfo(
         id: '1',
         name: 'excellent',
         displayName: 'Excellent',
@@ -113,9 +113,10 @@ void main() {
         accuracyRating: 0.9,
         speedRating: 0.85,
       );
-      expect(excellentModel.performanceDescription, 'Excellent (Fast & Accurate)');
+      expect(
+          excellentModel.performanceDescription, 'Excellent (Fast & Accurate)');
 
-      final fastModel = ModelInfo(
+      const fastModel = ModelInfo(
         id: '2',
         name: 'fast',
         displayName: 'Fast',
@@ -130,7 +131,7 @@ void main() {
       );
       expect(fastModel.performanceDescription, 'Fast');
 
-      final accurateModel = ModelInfo(
+      const accurateModel = ModelInfo(
         id: '3',
         name: 'accurate',
         displayName: 'Accurate',
@@ -145,7 +146,7 @@ void main() {
       );
       expect(accurateModel.performanceDescription, 'Accurate');
 
-      final balancedModel = ModelInfo(
+      const balancedModel = ModelInfo(
         id: '4',
         name: 'balanced',
         displayName: 'Balanced',
@@ -160,7 +161,7 @@ void main() {
       );
       expect(balancedModel.performanceDescription, 'Balanced');
 
-      final basicModel = ModelInfo(
+      const basicModel = ModelInfo(
         id: '5',
         name: 'basic',
         displayName: 'Basic',
@@ -178,7 +179,7 @@ void main() {
 
     test('variantDisplayName returns correct names', () {
       expect(
-        ModelInfo(
+        const ModelInfo(
           id: '1',
           name: 'test',
           displayName: 'Test',
@@ -193,7 +194,7 @@ void main() {
       );
 
       expect(
-        ModelInfo(
+        const ModelInfo(
           id: '2',
           name: 'test',
           displayName: 'Test',
@@ -208,7 +209,7 @@ void main() {
       );
 
       expect(
-        ModelInfo(
+        const ModelInfo(
           id: '3',
           name: 'test',
           displayName: 'Test',
@@ -224,7 +225,7 @@ void main() {
     });
 
     test('fullDisplayName includes variant for non-standard models', () {
-      final withVariant = ModelInfo(
+      const withVariant = ModelInfo(
         id: '1',
         name: 'yolo11m',
         displayName: 'YOLO11',
@@ -237,7 +238,7 @@ void main() {
       );
       expect(withVariant.fullDisplayName, 'YOLO11 (Medium)');
 
-      final noVariant = ModelInfo(
+      const noVariant = ModelInfo(
         id: '2',
         name: 'yunet',
         displayName: 'YuNet',
@@ -252,7 +253,7 @@ void main() {
     });
 
     test('isAvailable returns true when bundled or downloaded', () {
-      final bundled = ModelInfo(
+      const bundled = ModelInfo(
         id: '1',
         name: 'test',
         displayName: 'Test',
@@ -267,7 +268,7 @@ void main() {
       );
       expect(bundled.isAvailable, true);
 
-      final downloaded = ModelInfo(
+      const downloaded = ModelInfo(
         id: '2',
         name: 'test',
         displayName: 'Test',
@@ -282,7 +283,7 @@ void main() {
       );
       expect(downloaded.isAvailable, true);
 
-      final notAvailable = ModelInfo(
+      const notAvailable = ModelInfo(
         id: '3',
         name: 'test',
         displayName: 'Test',
@@ -299,7 +300,7 @@ void main() {
     });
 
     test('sizeString formats sizes correctly', () {
-      final kbModel = ModelInfo(
+      const kbModel = ModelInfo(
         id: '1',
         name: 'small',
         displayName: 'Small',
@@ -312,7 +313,7 @@ void main() {
       );
       expect(kbModel.sizeString, '512 KB');
 
-      final mbModel = ModelInfo(
+      const mbModel = ModelInfo(
         id: '2',
         name: 'medium',
         displayName: 'Medium',
@@ -325,7 +326,7 @@ void main() {
       );
       expect(mbModel.sizeString, '38.5 MB');
 
-      final gbModel = ModelInfo(
+      const gbModel = ModelInfo(
         id: '3',
         name: 'huge',
         displayName: 'Huge',

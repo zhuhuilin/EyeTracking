@@ -20,7 +20,9 @@
       "Bash(\"/c/Program Files/CMake/bin/cmake.exe\":*)",
       "Bash(\"/c/Program Files/CMake/bin/cmake.exe\" --build . --config Release)",
       "Bash(chmod:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

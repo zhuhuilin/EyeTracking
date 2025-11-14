@@ -45,7 +45,7 @@ class _CalibrationPageState extends State<CalibrationPage> {
   List<Offset> _getCalibrationPoints(Size screenSize) {
     return [
       // Top-left: position center so circle is fully visible
-      Offset(_circleRadius, _circleRadius),
+      const Offset(_circleRadius, _circleRadius),
       // Top-right: position center so circle is fully visible
       Offset(screenSize.width - _circleRadius, _circleRadius),
       // Center
@@ -257,7 +257,6 @@ class _CalibrationPageState extends State<CalibrationPage> {
       _currentPoint = 0;
     });
   }
-
 
   String _getInstructionForPoint(int pointIndex) {
     const positions = [
@@ -478,7 +477,9 @@ class _CalibrationPageState extends State<CalibrationPage> {
               ),
 
             // Countdown overlay
-            if (_calibrating && _showingCountdown && _currentPoint < calibrationPoints.length)
+            if (_calibrating &&
+                _showingCountdown &&
+                _currentPoint < calibrationPoints.length)
               CountdownOverlay(
                 durationSeconds: 5,
                 showFlash: true,
@@ -489,7 +490,9 @@ class _CalibrationPageState extends State<CalibrationPage> {
               ),
 
             // Instructions overlay
-            if (_calibrating && _settings.showInstructions && !_showingCountdown)
+            if (_calibrating &&
+                _settings.showInstructions &&
+                !_showingCountdown)
               InstructionsOverlay(
                 instruction: _getInstructionForPoint(_currentPoint),
                 currentPoint: _currentPoint + 1,

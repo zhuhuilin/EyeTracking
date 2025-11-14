@@ -129,10 +129,12 @@ class _CameraSelectionDialogState extends State<CameraSelectionDialog> {
                           itemCount: _cameras.length,
                           itemBuilder: (context, index) {
                             final camera = _cameras[index];
-                            final cameraService =
-                                Provider.of<CameraService>(context, listen: false);
+                            final cameraService = Provider.of<CameraService>(
+                                context,
+                                listen: false);
                             final isSelected =
-                                cameraService.selectedCamera?.name == camera.name;
+                                cameraService.selectedCamera?.name ==
+                                    camera.name;
 
                             return Card(
                               margin: const EdgeInsets.symmetric(vertical: 4),
@@ -150,13 +152,15 @@ class _CameraSelectionDialogState extends State<CameraSelectionDialog> {
                                     fontWeight: isSelected
                                         ? FontWeight.bold
                                         : FontWeight.normal,
-                                    color: isSelected ? Colors.blue : Colors.black,
+                                    color:
+                                        isSelected ? Colors.blue : Colors.black,
                                   ),
                                 ),
                                 subtitle: Text(
                                   'Lens: ${camera.lensDirection.toString().split('.').last}',
                                   style: TextStyle(
-                                    color: isSelected ? Colors.blue : Colors.grey,
+                                    color:
+                                        isSelected ? Colors.blue : Colors.grey,
                                   ),
                                 ),
                                 trailing: isSelected
@@ -199,17 +203,20 @@ class _CameraSelectionDialogState extends State<CameraSelectionDialog> {
       children: [
         Text(
           'AI Face Detection Model',
-          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          style: theme.textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
         Consumer<CameraService>(
           builder: (context, cameraService, _) {
-            final current = _selectedBackend ?? cameraService.faceDetectionBackend;
+            final current =
+                _selectedBackend ?? cameraService.faceDetectionBackend;
             return DropdownButtonFormField<FaceDetectionBackend>(
-              value: current,
+              initialValue: current,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
               items: FaceDetectionBackend.values
                   .map(
@@ -221,7 +228,8 @@ class _CameraSelectionDialogState extends State<CameraSelectionDialog> {
                   .toList(),
               onChanged: (backend) async {
                 if (backend == null) return;
-                final service = Provider.of<CameraService>(context, listen: false);
+                final service =
+                    Provider.of<CameraService>(context, listen: false);
                 await service.setFaceDetectionBackend(backend);
                 if (!mounted) return;
                 setState(() {

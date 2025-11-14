@@ -83,7 +83,8 @@ class CameraService extends ChangeNotifier {
   StreamSubscription<TrackingResult>? _trackingSubscription;
   List<cam.CameraDescription> _availableCameras = [];
   cam.CameraDescription? _selectedCamera;
-  final Map<String, String> _cameraDeviceIds = {}; // Map camera name to device ID
+  final Map<String, String> _cameraDeviceIds =
+      {}; // Map camera name to device ID
   TrackingResult? _latestTrackingResult;
   FaceDetectionBackend _faceDetectionBackend = FaceDetectionBackend.auto;
   String? _selectedModelId; // Currently selected model ID
@@ -120,9 +121,11 @@ class CameraService extends ChangeNotifier {
 
         // If camera_macos returns 0 devices, try our custom helper
         if (macCameras.isEmpty) {
-          print('camera_macos returned 0 devices, trying custom camera helper...');
+          print(
+              'camera_macos returned 0 devices, trying custom camera helper...');
           try {
-            const MethodChannel helperChannel = MethodChannel('eyeball_tracking/camera_helper');
+            const MethodChannel helperChannel =
+                MethodChannel('eyeball_tracking/camera_helper');
             final result = await helperChannel.invokeMethod('listCameras');
 
             if (result is Map && result['devices'] is List) {
@@ -132,13 +135,15 @@ class CameraService extends ChangeNotifier {
               _availableCameras = devices.map((device) {
                 final deviceMap = device as Map;
                 return cam.CameraDescription(
-                  name: deviceMap['localizedName'] as String? ?? 'Unknown Camera',
+                  name:
+                      deviceMap['localizedName'] as String? ?? 'Unknown Camera',
                   lensDirection: cam.CameraLensDirection.external,
                   sensorOrientation: 0,
                 );
               }).toList();
 
-              print('Successfully detected ${_availableCameras.length} cameras via custom helper');
+              print(
+                  'Successfully detected ${_availableCameras.length} cameras via custom helper');
               for (var camera in _availableCameras) {
                 print(' - ${camera.name}');
               }
@@ -275,14 +280,16 @@ class CameraService extends ChangeNotifier {
     print('[CameraService] - isInitialized: $_isInitialized');
     print('[CameraService] - isTracking: $_isTracking');
     print('[CameraService] - usingMacOSCamera: $_usingMacOSCamera');
-    print('[CameraService] - macCameraController: ${_macCameraController != null}');
+    print(
+        '[CameraService] - macCameraController: ${_macCameraController != null}');
 
     if (!_isInitialized) {
       print('[CameraService] Not initialized, initializing first...');
       await initialize();
     }
     if (_usingMacOSCamera && _macCameraController == null) {
-      print('[CameraService] startTracking waiting: macOS controller not attached');
+      print(
+          '[CameraService] startTracking waiting: macOS controller not attached');
       return;
     }
     if (_isTracking) {
@@ -408,9 +415,11 @@ class CameraService extends ChangeNotifier {
 
   void _handleMacImageFrame(cam_macos.CameraImageData? data) {
     if (!_macLoggedFirstFrame) {
-      print('[CameraService] First frame callback received! data is ${data == null ? "null" : "valid"}');
+      print(
+          '[CameraService] First frame callback received! data is ${data == null ? "null" : "valid"}');
       if (data != null) {
-        print('[CameraService] Frame size: ${data.width}x${data.height}, bytesPerRow: ${data.bytesPerRow}, bytes: ${data.bytes.length}');
+        print(
+            '[CameraService] Frame size: ${data.width}x${data.height}, bytesPerRow: ${data.bytesPerRow}, bytes: ${data.bytes.length}');
       }
       _macLoggedFirstFrame = true;
     }
@@ -562,7 +571,11 @@ class CameraService extends ChangeNotifier {
         final double? y = (rectData['y'] as num?)?.toDouble();
         final double? width = (rectData['width'] as num?)?.toDouble();
         final double? height = (rectData['height'] as num?)?.toDouble();
-        if (faceDetected && x != null && y != null && width != null && height != null) {
+        if (faceDetected &&
+            x != null &&
+            y != null &&
+            width != null &&
+            height != null) {
           faceRect = Rect.fromLTWH(x, y, width, height);
         }
       }
@@ -784,7 +797,7 @@ class MockCameraService extends CameraService {
         headMoving: DateTime.now().millisecond % 500 < 50,
         shouldersMoving: DateTime.now().millisecond % 1000 < 20,
         faceDetected: true,
-        faceRect: Rect.fromLTWH(0.35, 0.25, 0.3, 0.3),
+        faceRect: const Rect.fromLTWH(0.35, 0.25, 0.3, 0.3),
       );
 
       _trackingController.add(mockResult);
