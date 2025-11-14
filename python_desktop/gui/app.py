@@ -82,6 +82,17 @@ class EyeTrackingApp(QMainWindow):
         self.setWindowTitle("Eye Tracking Desktop Prototype")
         self.setGeometry(100, 100, 1280, 720)
 
+        # Center window on primary screen
+        from PyQt6.QtGui import QScreen
+        screen = QScreen.availableGeometry(self.screen())
+        x = (screen.width() - 1280) // 2
+        y = (screen.height() - 720) // 2
+        self.move(x, y)
+
+        # Bring window to front on startup
+        self.raise_()
+        self.activateWindow()
+
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -305,6 +316,10 @@ def create_app(database: Database) -> QApplication:
     app.setStyle("Fusion")  # Modern look
 
     window = EyeTrackingApp(database)
+
+    # CRITICAL: Store window as app attribute to prevent garbage collection
+    app.main_window = window
+
     window.show()
 
     return app
