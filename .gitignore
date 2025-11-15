@@ -96,3 +96,9 @@ logs/
 
 # Documentation
 docs/_build/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Flutter DevTools
+flutter_app/devtools_options.yaml
